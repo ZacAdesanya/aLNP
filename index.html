@@ -1,0 +1,965 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>aLNP Explorer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400&display=swap" rel="stylesheet">
+<style>
+/* Layout idea: a lab-notebook style data explorer; left filter rail, tabbed main pane. Palette: lignin brown + teal ink. */
+:root{
+  --bg:#f4f6fa; --panel:#ffffff; --ink:#14213d; --muted:#5b6678; --line:#d5dbe6;
+  --accent:#D50032; --accent-ink:#ffffff; --warn:#a4561a; --bad:#B10000; --navy:#001E62; --slate:#A6C5D7;
+  --display:"Fraunces",Georgia,serif; --body:"IBM Plex Sans",system-ui,sans-serif; --mono:"IBM Plex Mono",ui-monospace,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0a1226; --panel:#111b36; --ink:#e8ecf5; --muted:#9fabc4; --line:#2a3a66;
+  --accent:#ff5c7f; --accent-ink:#1a0008; --warn:#e0975a; --bad:#ff8a8a; color-scheme:dark;}}
+:root[data-theme="dark"]{
+  --bg:#0a1226; --panel:#111b36; --ink:#e8ecf5; --muted:#9fabc4; --line:#2a3a66;
+  --accent:#ff5c7f; --accent-ink:#1a0008; --warn:#e0975a; --bad:#ff8a8a; color-scheme:dark;}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--body);font-size:15px;line-height:1.45}
+header{padding:18px 20px 16px;display:flex;flex-wrap:wrap;gap:8px 24px;align-items:baseline;justify-content:space-between;background:var(--navy);color:#fff;border-bottom:4px solid #D50032}
+h1{font-family:var(--display);font-size:26px;margin:0;text-wrap:balance}
+header h1{color:#fff}
+header .sub{color:#c6d0ea}
+.sub{color:var(--muted);font-size:13px;max-width:70ch}
+nav{display:flex;gap:4px;padding:8px 20px 0;background:var(--panel);border-bottom:1px solid var(--line);overflow-x:auto}
+nav button{font:inherit;background:none;border:0;border-bottom:3px solid transparent;padding:8px 14px;color:var(--muted);cursor:pointer;white-space:nowrap}
+nav button[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--accent);font-weight:600}
+button:focus-visible,input:focus-visible,select:focus-visible,a:focus-visible,th:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+main{padding:16px 20px 40px;display:grid;grid-template-columns:240px 1fr;gap:20px}
+@media(max-width:800px){main{grid-template-columns:1fr}}
+aside{display:flex;flex-direction:column;gap:12px;align-self:start}
+label{font-size:12px;color:var(--muted);display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:.04em}
+input,select{width:100%;font:inherit;padding:7px 8px;background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:6px}
+.tiles{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:14px}
+.tile{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px 14px;min-width:110px}
+.tile b{display:block;font-family:var(--display);font-size:24px;font-variant-numeric:tabular-nums}
+.tile span{font-size:12px;color:var(--muted)}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px;margin-bottom:14px}
+.card h2{font-family:var(--display);font-size:17px;margin:0 0 8px}
+.scroll{overflow-x:auto;max-height:560px;overflow-y:auto;border:1px solid var(--line);border-radius:8px;background:var(--panel)}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th,td{padding:6px 9px;text-align:left;border-bottom:1px solid var(--line);vertical-align:top}
+th{position:sticky;top:0;background:var(--panel);cursor:pointer;white-space:nowrap;font-weight:600;z-index:1}
+td.num{font-family:var(--mono);font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap}
+tr:hover td{background:color-mix(in srgb,var(--accent) 7%,transparent)}
+.pill{display:inline-block;border-radius:99px;padding:1px 8px;font-size:11px;border:1px solid var(--line);white-space:nowrap}
+.pill.lo{border-color:var(--warn);color:var(--warn)}
+.muted{color:var(--muted)}
+.row{display:flex;flex-wrap:wrap;gap:12px}
+.row>*{flex:1 1 200px}
+button.go{font:inherit;background:var(--accent);color:var(--accent-ink);border:0;border-radius:6px;padding:8px 14px;cursor:pointer;font-weight:600}
+.note{border-left:3px solid var(--warn);padding:6px 10px;font-size:13px;background:color-mix(in srgb,var(--warn) 8%,transparent);margin:10px 0}
+.big{font-family:var(--display);font-size:30px;font-variant-numeric:tabular-nums}
+svg text{fill:var(--muted);font-family:var(--body);font-size:11px}
+.small{font-size:12px}
+a{color:var(--accent)}
+.hide{display:none}
+main.wide{grid-template-columns:minmax(0,1fr)}
+section#pane{min-width:0}
+/* Periodic Dock + Flow views (scoped to .xl) */
+.xl,.xfx{--bg:#0b1016;--panel:#121a22;--panel2:#18232e;--line:#25354a;--text:#e9eff4;--muted:#93a3b3;--amber:#e0a458;--amber-ink:#1c1306;--focus:#8ad0ff;--good:#58c4a0;--warn:#e6b450;--bad:#ef8272;--c-metal:#6db3f2;--c-oxide:#a597f8;--c-organic:#e0a458;--c-polymer:#4fc3a1;--c-bio:#ec7aa0;--c-inorg:#b5c46a;--c-none:#7d8b99;color-scheme:dark}
+.xl{background:var(--bg);color:var(--text);font:14px/1.5 var(--body);border-radius:10px;padding:14px;min-width:0}
+.xl h1,.xl h2,.xl h3{margin:0;font-family:var(--display);font-weight:700;letter-spacing:-.01em}
+.xl p{margin:0}.xl button,.xl input,.xl select{font:inherit;color:inherit}.xl button{cursor:pointer}
+.xl a{color:var(--focus)}.xl label{text-transform:none;letter-spacing:0;font-size:inherit;color:inherit;display:inline;margin:0}
+.xl svg text{fill:inherit;font-family:inherit;font-size:inherit}
+.xl .row>*{flex:0 1 auto}
+.xl .card{margin-bottom:0}
+.xl .tile{min-width:0}
+.xl .tile b{font-size:inherit;font-family:inherit}
+.xl .pill{display:inline-block}
+.xl table{width:auto}
+.xfx .tip{position:fixed;z-index:200}
+.xfx .ghost{position:fixed;z-index:210}
+.xl .xnote{border-left:3px solid var(--warn);padding:6px 10px;font-size:13px;background:#e6b4501a;margin:0 0 12px}
+.xl *{ box-sizing: border-box; }
+.xl h1,.xl h2,.xl h3{ margin: 0; font-family: var(--display); font-weight: 700; text-wrap: balance; letter-spacing: -.01em; }
+.xl p{ margin: 0; }
+.xl button,.xl input,.xl textarea,.xl select{ font: inherit; color: inherit; }
+.xl button{ cursor: pointer; }
+.xl :focus-visible{ outline: 2px solid var(--focus); outline-offset: 2px; }
+.xl a{ color: var(--focus); }
+.xl .mono{ font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.xl .muted{ color: var(--muted); }
+.xl .top{ display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--panel); }
+.xl .brand{ display: flex; align-items: center; gap: 10px; font-family: var(--display); font-weight: 700; font-size: 16px; }
+.xl .brand svg{ flex: none; }
+.xl .top .grow{ flex: 1 1 auto; }
+.xl .pill{ font: 12px var(--mono); padding: 3px 9px; border: 1px solid var(--line); border-radius: 99px; color: var(--muted); background: var(--panel2); }
+.xl .btn{ border: 1px solid var(--line); background: var(--panel2); border-radius: 8px; padding: 8px 14px; }
+.xl .btn:hover{ border-color: var(--muted); }
+.xl .btn.primary{ background: var(--amber); border-color: var(--amber); color: var(--amber-ink); font-weight: 600; }
+.xl .btn.primary:hover{ filter: brightness(1.08); }
+.xl .btn.small{ padding: 4px 10px; font-size: 12.5px; }
+.xl .btn[disabled]{ opacity: .45; cursor: not-allowed; }
+.xl .page{ max-width: 1320px; margin: 0 auto; padding: 16px; }
+.xl .card{ background: var(--panel); border: 1px solid var(--line); border-radius: 12px; }
+.xl .stack{ display: flex; flex-direction: column; gap: 14px; }
+.xl .row{ display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.xl .seg{ display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.xl .seg button{ border: 0; background: var(--panel2); padding: 6px 12px; color: var(--muted); }
+.xl .seg button + button{ border-left: 1px solid var(--line); }
+.xl .seg button[aria-pressed="true"]{ background: var(--amber); color: var(--amber-ink); font-weight: 600; }
+.xl .chips{ display: flex; flex-wrap: wrap; gap: 6px; }
+.xl .chip{ min-height: 32px; border: 1px solid var(--line); background: var(--panel2); border-radius: 99px; padding: 4px 11px; font-size: 12.5px; color: var(--text); }
+.xl .chip .n{ font-family: var(--mono); font-size: 11px; color: var(--muted); margin-left: 5px; }
+.xl .chip[aria-pressed="true"]{ border-color: var(--amber); background: color-mix(in srgb, var(--amber) 22%, var(--panel2)); }
+.xl .chip.draggable{ cursor: grab; }
+.xl .tabs{ display: flex; gap: 4px; border-bottom: 1px solid var(--line); overflow-x: auto; scrollbar-width: none; }
+.xl .tabs button{ white-space: nowrap; flex: none; background: none; border: 0; border-bottom: 2px solid transparent; padding: 8px 14px; color: var(--muted); font-weight: 500; }
+.xl .tabs button[aria-selected="true"]{ color: var(--text); border-bottom-color: var(--amber); }
+.xl .dock{ display: grid; grid-template-columns: minmax(0, 1fr) 400px; gap: 16px; align-items: start; }
+@media (max-width: 1040px){.xl .dock{ grid-template-columns: minmax(0, 1fr); }}
+.xl .dock-left{ padding: 14px; display: flex; flex-direction: column; gap: 12px; }
+.xl .dock-left h2{ font-size: 15px; }
+.xl .ptwrap{ overflow-x: auto; padding-bottom: 4px; }
+.xl .pt{ display: grid; grid-template-columns: repeat(18, minmax(0, 1fr)); grid-template-rows: repeat(7, auto) 8px repeat(2, auto); gap: 3px; min-width: 600px; }
+.xl .el{ position: relative; aspect-ratio: 1; min-width: 0; padding: 0; border-radius: 5px; border: 1px solid var(--line); background: var(--panel); color: var(--muted);
+  display: flex; flex-direction: column; align-items: center; justify-content: center; user-select: none; }
+.xl .el .z{ position: absolute; top: 2px; left: 3px; font: 8.5px var(--mono); opacity: .75; }
+.xl .el .s{ font: 700 clamp(11px, 1.45vw, 17px) var(--display); line-height: 1; }
+.xl .el .n{ font: 9px var(--mono); margin-top: 2px; min-height: 10px; }
+.xl .el.off{ opacity: .32; }
+.xl .el.has{ cursor: grab; color: var(--text); border-color: color-mix(in srgb, var(--amber) 40%, var(--line));
+  background: color-mix(in srgb, var(--amber) calc(var(--t) * 92%), var(--panel2)); }
+.xl .el.has.hi{ color: var(--amber-ink); }
+.xl .el.has.nil{ background: var(--panel); color: var(--muted); border-style: dashed; }
+.xl .el.has:hover{ border-color: var(--text); }
+.xl .el.sel{ outline: 2px solid var(--focus); outline-offset: 1px; }
+.xl .ramp{ display: flex; align-items: center; gap: 8px; font: 11px var(--mono); color: var(--muted); }
+.xl .ramp i{ display: block; height: 8px; width: 120px; border-radius: 4px; background: linear-gradient(90deg, var(--panel2), var(--amber)); border: 1px solid var(--line); }
+.xl .shelf{ border-top: 1px solid var(--line); padding-top: 10px; display: flex; flex-direction: column; gap: 8px; }
+.xl .ghost{ position: fixed; z-index: 60; pointer-events: none; padding: 6px 12px; border-radius: 8px; background: var(--amber); color: var(--amber-ink); font: 700 16px var(--display); box-shadow: 0 6px 24px #000a; transform: translate(-50%, -50%); }
+.xl .dock-right{ padding: 14px; display: flex; flex-direction: column; gap: 12px; position: sticky; top: 74px; transition: box-shadow .15s, border-color .15s; }
+.xl .dock-right.over{ border-color: var(--amber); box-shadow: 0 0 0 3px color-mix(in srgb, var(--amber) 30%, transparent); }
+.xl .dock-right h2{ font-size: 20px; }
+.xl .dock-right .sub{ color: var(--muted); font-size: 12.5px; }
+.xl .specimen{ background: radial-gradient(circle at 50% 45%, #1b2a3a, var(--panel) 70%); border: 1px solid var(--line); border-radius: 10px; }
+.xl .specimen svg{ display: block; width: 100%; height: auto; }
+.xl .specimen text{ fill: var(--muted); font: 11px var(--mono); }
+.xl .specimen .big{ fill: var(--text); font: 700 15px var(--display); }
+.xl .drift{ transform-box: fill-box; transform-origin: center; animation: xl-drift 80s linear infinite; }
+@keyframes xl-drift{ to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce){.xl .drift{ animation: none; }
+.xl *{ scroll-behavior: auto !important; }}
+.xl .legendcap{ font-size: 11.5px; color: var(--muted); }
+.xl .tiles{ display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.xl .tile{ border: 1px solid var(--line); border-radius: 9px; padding: 7px 9px; background: var(--panel2); min-width: 0; }
+.xl .tile .k{ font-size: 11px; color: var(--muted); }
+.xl .tile .v{ font: 500 17px var(--mono); }
+.xl .tile .v small{ font-size: 11px; color: var(--muted); margin-left: 2px; }
+.xl .tile .d{ font: 11px var(--mono); color: var(--muted); }
+.xl .badge{ display: inline-block; font-size: 11px; padding: 1px 7px; border-radius: 99px; border: 1px solid currentColor; }
+.xl .badge.warn{ color: var(--warn); }
+.xl .badge.good{ color: var(--good); }
+.xl .sect h3{ font-size: 13px; margin-bottom: 6px; font-family: var(--body); font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+.xl .stackbar{ display: flex; height: 12px; border-radius: 6px; overflow: hidden; border: 1px solid var(--line); }
+.xl .stackbar i{ display: block; }
+.xl .keys{ display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 6px; font-size: 12px; color: var(--muted); }
+.xl .keys span::before{ content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 5px; background: var(--k); }
+.xl .fnrow{ border: 1px solid var(--line); border-radius: 8px; background: var(--panel2); margin-bottom: 6px; }
+.xl .fnrow > button{ width: 100%; text-align: left; background: none; border: 0; padding: 7px 10px; display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; align-items: center; }
+.xl .fnrow .bar{ grid-column: 1 / -1; height: 4px; background: var(--bg); border-radius: 2px; overflow: hidden; }
+.xl .fnrow .bar i{ display: block; height: 100%; background: var(--amber); }
+.xl .fnrow .met{ padding: 2px 10px 9px; font-size: 12px; color: var(--muted); display: flex; flex-direction: column; gap: 3px; }
+.xl .fnrow .met b{ color: var(--text); font: 500 12px var(--mono); }
+.xl .papers{ display: flex; flex-direction: column; gap: 8px; }
+.xl .paper{ font-size: 12.5px; }
+.xl .paper b{ font-weight: 600; }
+.xl .paper .t{ color: var(--muted); display: block; }
+.xl .flow{ display: flex; flex-direction: column; gap: 12px; }
+.xl .ftools{ display: flex; flex-wrap: wrap; gap: 10px 20px; align-items: center; padding: 10px 14px; }
+.xl .ftools label.chk{ display: inline-flex; gap: 6px; align-items: center; font-size: 13px; }
+.xl .ftools .lab{ font-size: 12px; color: var(--muted); margin-right: 6px; }
+.xl .fgrid{ display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 14px; align-items: start; }
+@media (max-width: 1040px){.xl .fgrid{ grid-template-columns: minmax(0, 1fr); }}
+.xl .fmain{ padding: 10px 12px 6px; }
+.xl .fsum{ font-size: 12.5px; color: var(--muted); padding: 2px 4px 6px; }
+.xl .swrap{ overflow-x: auto; }
+.xl .swrap svg{ display: block; width: 100%; min-width: 780px; height: auto; }
+.xl .colhead{ fill: var(--muted); font: 600 11px var(--body); letter-spacing: .08em; text-transform: uppercase; }
+.xl .lbl{ fill: var(--text); font: 12px var(--body); paint-order: stroke; stroke: var(--bg); stroke-width: 3.5px; stroke-linejoin: round; }
+.xl .lbl .c{ fill: var(--muted); font: 10.5px var(--mono); }
+.xl .node{ cursor: pointer; }
+.xl .node rect{ stroke: var(--bg); stroke-width: 1; }
+.xl .link{ fill: none; transition: opacity .15s; }
+.xl .trace{ fill: none; pointer-events: none; }
+.xl .link.dim{ opacity: .2; }
+.xl .node.dim{ opacity: .4; }
+.xl .hit{ fill: none; stroke: transparent; pointer-events: stroke; }
+.xl .link{ pointer-events: none; }
+.xl .link.hot{ stroke-opacity: .75 !important; }
+.xl .node .nh{ stroke: none; }
+.xl .node.sel .nr{ stroke: #fff; stroke-width: 2; }
+.xl .ab{ display: inline-block; min-width: 16px; text-align: center; font: 700 10.5px var(--mono); border-radius: 4px; padding: 0 4px; margin-right: 6px; background: #e0a458; color: #1c1306; }
+.xl .ab.b{ background: #8ad0ff; }
+.xl .abchip{ display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); border-radius: 99px; padding: 3px 4px 3px 10px; font-size: 12.5px; background: var(--panel2); }
+.xl .abchip.a{ border-color: #e0a458; }
+.xl .abchip.b{ border-color: #8ad0ff; }
+.xl .abchip b{ font: 700 11px var(--mono); }
+.xl .abchip button{ background: none; border: 0; color: var(--muted); font-size: 17px; line-height: 1; padding: 0 7px; }
+.xl .el.selb{ outline: 2px solid #8ad0ff; outline-offset: 1px; }
+.xl .cmp-on .dock-left{ outline: 2px dashed #8ad0ff; outline-offset: 2px; }
+.xl .rel{ width: 100%; height: auto; display: block; background: var(--panel2); border: 1px solid var(--line); border-radius: 8px; }
+.xl .rel text{ fill: var(--muted); font: 10px var(--mono); }
+.xl .rel .domain,.xl .rel .tick line{ stroke: var(--line); }
+.xl select{ background: var(--panel2); border: 1px solid var(--line); border-radius: 8px; padding: 5px 8px; max-width: 100%; color: var(--text, inherit); }
+.xl .molgrid{ display: grid; grid-template-columns: repeat(auto-fill, minmax(124px, 1fr)); gap: 8px; }
+.xl .mol{ display: flex; flex-direction: column; align-items: stretch; gap: 4px; padding: 6px 6px 7px; border: 1px solid color-mix(in srgb, var(--amber) calc(var(--t, 0) * 70%), var(--line)); border-radius: 10px; background: transparent; color: var(--text, inherit); text-align: left; cursor: grab; touch-action: manipulation; }
+.xl .mol:hover{ border-color: var(--amber); }
+.xl .mol[aria-pressed="true"]{ outline: 2px solid var(--amber); outline-offset: 1px; }
+.xl .mol .st{ height: 84px; display: grid; place-items: center; }
+.xl .mol .st svg{ width: auto; height: auto; max-width: 100%; max-height: 100%; }
+.xl .mol .nm{ font-size: 11.5px; line-height: 1.2; display: flex; justify-content: space-between; gap: 6px; }
+.xl .mol .nm .n{ font: 11px var(--mono); color: var(--muted); }
+.xl .mol .mix{ font-size: 10.5px; color: var(--muted); text-align: center; padding: 0 6px; }
+.xl .molnote{ font-size: 11.5px; color: var(--muted); margin-top: 6px; }
+.xl .dockstruct{ float: right; width: 210px; height: 130px; margin: 0 0 6px 10px; }
+@media (max-width: 520px){ .xl .dockstruct{ width: 150px; height: 98px; } }
+.xl .dockstruct svg{ width: 100%; height: 100% }
+.xl .specimen .tag{ font: 700 12px var(--display); }
+@media (max-height: 720px){.xl .dock-right,.xl .fside{ position: static; }}
+.xl .fside{ padding: 14px; display: flex; flex-direction: column; gap: 12px; position: sticky; top: 74px; }
+.xl .fside h2{ font-size: 18px; }
+.xl .dist{ display: flex; flex-direction: column; gap: 5px; }
+.xl .dist .r{ display: grid; grid-template-columns: minmax(0, 1fr) 40px; gap: 2px 8px; font-size: 12.5px; }
+.xl .dist .r .b{ grid-column: 1 / -1; height: 4px; background: var(--bg); border-radius: 2px; overflow: hidden; }
+.xl .dist .r .b i{ display: block; height: 100%; }
+.xl .dist .r span:last-child{ text-align: right; font: 12px var(--mono); color: var(--muted); }
+.xl .tip{ position: fixed; z-index: 70; pointer-events: none; background: #05080c; border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; font-size: 12.5px; max-width: 280px; box-shadow: 0 6px 20px #0009; }
+.xl .tip b{ font-weight: 600; }
+.xl .tip .mono{ color: var(--amber); }
+.xfx .ghost{ position: fixed; z-index: 60; pointer-events: none; padding: 6px 12px; border-radius: 8px; background: var(--amber); color: var(--amber-ink); font: 700 16px var(--display); box-shadow: 0 6px 24px #000a; transform: translate(-50%, -50%); }
+.xfx .tip{ position: fixed; z-index: 70; pointer-events: none; background: #05080c; border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; font-size: 12.5px; max-width: 280px; box-shadow: 0 6px 20px #0009; }
+.xfx .tip b{ font-weight: 600; }
+.xfx .tip .mono{ color: var(--amber); }
+.xl .ftools label.chk{flex:none;white-space:nowrap;display:inline-flex;align-items:center;gap:6px;margin:0;width:auto}
+.xl input[type=checkbox]{width:auto;margin:0}
+/* UIC palette overrides for the ported views */
+.xl,.xfx{--bg:#f4f6fa;--panel:#ffffff;--panel2:#eaeff7;--line:#d5dbe6;--text:#14213d;--muted:#5b6678;--amber:#D50032;--amber-ink:#ffffff;--focus:#001E62;--ca:#D50032;--cb:#001E62;--cb-ink:#ffffff;--good:#1b7f5c;--warn:#a4561a;--bad:#B10000;--c-metal:#2F5BB7;--c-oxide:#8FA9D6;--c-organic:#D50032;--c-polymer:#F08CA2;--c-bio:#6FA3C0;--c-inorg:#5E6B7A;--c-none:#9AA3AF;color-scheme:light}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .xl,:root:not([data-theme="light"]) .xfx{--bg:#0a1226;--panel:#111b36;--panel2:#172447;--line:#2a3a66;--text:#e8ecf5;--muted:#9fabc4;--amber:#ff5c7f;--amber-ink:#1a0008;--focus:#A6C5D7;--ca:#ff5c7f;--cb:#A6C5D7;--cb-ink:#0a1226;color-scheme:dark}}
+:root[data-theme="dark"] .xl,:root[data-theme="dark"] .xfx{--bg:#0a1226;--panel:#111b36;--panel2:#172447;--line:#2a3a66;--text:#e8ecf5;--muted:#9fabc4;--amber:#ff5c7f;--amber-ink:#1a0008;--focus:#A6C5D7;--ca:#ff5c7f;--cb:#A6C5D7;--cb-ink:#0a1226;color-scheme:dark}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .xl{--ac:#e6ecf5;--ao:#FF8C7F;--an:#8CBFFF;--ap:#F2A559;--as:#F2D866;--acl:#7FD87F;--ax:#9fabc4}}
+:root[data-theme="dark"] .xl{--ac:#e6ecf5;--ao:#FF8C7F;--an:#8CBFFF;--ap:#F2A559;--as:#F2D866;--acl:#7FD87F;--ax:#9fabc4}
+.xl .mol:hover{ background: color-mix(in srgb, var(--amber) 6%, transparent); }
+.xl .mol:focus-visible,.xl .chip:focus-visible{ outline: 2px solid var(--focus); outline-offset: 2px; }
+@media (pointer: coarse){ .xl .chip{ min-height: 40px; } }
+.xl .srch{ flex: 1 1 160px; min-width: 140px; max-width: 260px; padding: 7px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--text, inherit); font: inherit; font-size: 13px; }
+.xl .alist{ display: flex; flex-direction: column; gap: 3px; max-height: 340px; overflow: auto; padding-right: 2px; }
+.xl .arow{ display: grid; grid-template-columns: 1fr auto 44px; align-items: center; gap: 10px; text-align: left; padding: 7px 10px; min-height: 36px; border: 1px solid color-mix(in srgb, var(--amber) calc(var(--t, 0) * 70%), var(--line)); border-radius: 8px; background: transparent; color: var(--text, inherit); font: inherit; font-size: 13px; cursor: grab; }
+.xl .arow:hover{ border-color: var(--amber); background: color-mix(in srgb, var(--amber) 6%, transparent); }
+.xl .arow[aria-pressed="true"]{ outline: 2px solid var(--amber); outline-offset: 1px; }
+.xl .arow .ap{ color: var(--muted); font-size: 11.5px; }
+.xl .arow .n{ font: 12px var(--mono); text-align: right; }
+.xl .arow:focus-visible{ outline: 2px solid var(--focus); outline-offset: 2px; }
+.xl .eltag{ margin-left: 6px; padding: 1px 5px; border: 1px solid var(--line); border-radius: 4px; font: 10.5px var(--mono); color: var(--muted); }
+.xl .el.cmp{ background: transparent; border: 1px dashed var(--line); color: var(--muted); cursor: pointer; }
+.xl .el.cmp:hover{ border-color: var(--amber); }
+.xl .el.cmp .n{ font-size: 8px; }
+.xl{border:1px solid var(--line)}
+.xl .specimen{background:radial-gradient(circle at 50% 45%,var(--panel2),var(--panel) 70%)}
+.xl .ab{background:var(--ca);color:#fff}
+.xl .ab.b{background:var(--cb);color:var(--cb-ink)}
+.xl .abchip.a{border-color:var(--ca)}
+.xl .abchip.b{border-color:var(--cb)}
+.xl .el.selb{outline:2px solid var(--cb)}
+.xl .cmp-on .dock-left{outline:2px dashed var(--cb)}
+.xl .node.sel .nr{stroke:var(--text)}
+.xl .box,.xl .card{box-shadow:0 1px 2px #001e6212}
+.xfx .tip{background:#001E62;color:#fff;border:1px solid #001E62}
+.xfx .tip .mono{color:#ffb3c1}
+.xfx .tip .muted{color:#b9c6e4}
+.xfx .ghost{background:#D50032;color:#fff;box-shadow:0 6px 24px #001e6266}
+.xl .node.nrd .lbl{fill:var(--muted)}
+.xl .node.nrd .nr{opacity:.5}
+</style>
+</head>
+<body>
+<header>
+  <h1>aLNP Explorer</h1>
+  <div class="sub">Augmented lignin nanoparticles from published literature. Every row has its paper, page and an extraction confidence. Prototype, not yet peer checked.</div>
+</header>
+<nav role="tablist" id="tabs">
+  <button role="tab" aria-selected="true" data-t="explore">Explore</button>
+  <button role="tab" aria-selected="false" data-t="charts">Charts</button>
+  <button role="tab" aria-selected="false" data-t="map">Structure–function map</button>
+  <button role="tab" aria-selected="false" data-t="dock">Periodic Dock</button>
+  <button role="tab" aria-selected="false" data-t="flow">Flow</button>
+  <button role="tab" aria-selected="false" data-t="papers">Papers</button>
+  <button role="tab" aria-selected="false" data-t="predict">Estimate</button>
+  <button role="tab" aria-selected="false" data-t="abbr">Abbreviations</button>
+</nav>
+<main>
+<aside id="filters">
+  <div><label for="q">Search</label><input id="q" type="search" placeholder="e.g. silver, curcumin, E. coli"></div>
+  <div><label for="fFn">Function</label><select id="fFn"></select></div>
+  <div><label for="fApp">Intended application</label><select id="fApp"></select></div>
+  <div><label for="fAug">Augmentation class</label><select id="fAug"></select></div>
+  <div><label for="fMet">Metric</label><select id="fMet"></select></div>
+  <div><label for="fConf">Min. confidence <span id="confv">0</span></label><input id="fConf" type="range" min="0" max="1" step="0.05" value="0"></div>
+  <button class="go" id="reset" type="button">Reset filters</button>
+  <div class="small muted" id="count"></div>
+</aside>
+<section id="pane"></section>
+</main>
+<div class="xfx"><div class="tip" role="tooltip" hidden></div></div>
+
+<script>
+(function(){
+const $ = (s, r) => (r || document).querySelector(s);
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const median = a => { a = a.filter(v => v != null && isFinite(v)).sort((x, y) => x - y); if (!a.length) return null; const m = a.length >> 1; return a.length % 2 ? a[m] : (a[m - 1] + a[m]) / 2; };
+const sgn = v => (v > 0 ? '+' : v < 0 ? '−' : '') + Math.abs(v);
+function num(v, dp) { if (v == null) return '–'; const a = Math.abs(v); const d = dp != null ? dp : (a >= 100 ? 0 : a >= 10 ? 1 : 2); return (v < 0 ? '−' : '') + a.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: d }); }
+
+const FN_LABEL = { antimicrobial: 'Antimicrobial', antioxidant: 'Antioxidant', catalytic: 'Catalytic', drug_delivery: 'Drug delivery', mechanical: 'Mechanical', uv_shielding: 'UV shielding', adsorption: 'Adsorption', anticancer: 'Anticancer', pesticide: 'Pesticide', sensing: 'Sensing', conductivity: 'Conductivity', characterization: 'Characterization' };
+const FN_COLOR = { Antimicrobial: '#D50032', Antioxidant: '#2F5BB7', Catalytic: '#6FA3C0', 'Drug delivery': '#B10000', Mechanical: '#5E6B7A', 'UV shielding': '#8FA9D6', Adsorption: '#3E4C73', Anticancer: '#F08CA2', Pesticide: '#A6C5D7', Sensing: '#E0587A', Conductivity: '#C98A96', Characterization: '#9AA3AF' };
+const ROUTE_LABEL = { none: 'None (bare LNP)', encapsulation: 'Encapsulation', adsorption: 'Adsorption', physical_blend: 'Physical blend', in_situ_reduction: 'In-situ reduction', coprecipitation: 'Co-precipitation', grafting: 'Grafting', other: 'Other', lignin_reduction: 'Lignin as reductant', doping: 'Doping', nabh4_reduction: 'NaBH₄ reduction', coating: 'Coating', coordination: 'Coordination' };
+const CLS_LABEL = { none: 'Bare LNP (control)', metal: 'Metal', metal_oxide: 'Metal oxide', inorganic: 'Inorganic', organic: 'Organic', polymer: 'Polymer', biomolecule: 'Biomolecule' };
+const CLS_COLOR = { none: '#9AA3AF', metal: '#2F5BB7', metal_oxide: '#8FA9D6', inorganic: '#5E6B7A', organic: '#D50032', polymer: '#F08CA2', biomolecule: '#6FA3C0' };
+const CLS_ORDER = ['metal', 'metal_oxide', 'inorganic', 'organic', 'polymer', 'biomolecule', 'none'];
+const PALETTE = ['#D50032', '#2F5BB7', '#6FA3C0', '#B10000', '#8FA9D6', '#F08CA2', '#5E6B7A', '#7C1F31', '#A6C5D7', '#E0587A', '#3E4C73', '#C98A96', '#9AA3AF'];
+
+const EL_SYM = 'H He Li Be B C N O F Ne Na Mg Al Si P S Cl Ar K Ca Sc Ti V Cr Mn Fe Co Ni Cu Zn Ga Ge As Se Br Kr Rb Sr Y Zr Nb Mo Tc Ru Rh Pd Ag Cd In Sn Sb Te I Xe Cs Ba La Ce Pr Nd Pm Sm Eu Gd Tb Dy Ho Er Tm Yb Lu Hf Ta W Re Os Ir Pt Au Hg Tl Pb Bi Po At Rn Fr Ra Ac Th Pa U Np Pu Am Cm Bk Cf Es Fm Md No Lr Rf Db Sg Bh Hs Mt Ds Rg Cn Nh Fl Mc Lv Ts Og'.split(' ');
+const EL_NAME = 'Hydrogen,Helium,Lithium,Beryllium,Boron,Carbon,Nitrogen,Oxygen,Fluorine,Neon,Sodium,Magnesium,Aluminium,Silicon,Phosphorus,Sulfur,Chlorine,Argon,Potassium,Calcium,Scandium,Titanium,Vanadium,Chromium,Manganese,Iron,Cobalt,Nickel,Copper,Zinc,Gallium,Germanium,Arsenic,Selenium,Bromine,Krypton,Rubidium,Strontium,Yttrium,Zirconium,Niobium,Molybdenum,Technetium,Ruthenium,Rhodium,Palladium,Silver,Cadmium,Indium,Tin,Antimony,Tellurium,Iodine,Xenon,Caesium,Barium,Lanthanum,Cerium,Praseodymium,Neodymium,Promethium,Samarium,Europium,Gadolinium,Terbium,Dysprosium,Holmium,Erbium,Thulium,Ytterbium,Lutetium,Hafnium,Tantalum,Tungsten,Rhenium,Osmium,Iridium,Platinum,Gold,Mercury,Thallium,Lead,Bismuth,Polonium,Astatine,Radon,Francium,Radium,Actinium,Thorium,Protactinium,Uranium,Neptunium,Plutonium,Americium,Curium,Berkelium,Californium,Einsteinium,Fermium,Mendelevium,Nobelium,Lawrencium,Rutherfordium,Dubnium,Seaborgium,Bohrium,Hassium,Meitnerium,Darmstadtium,Roentgenium,Copernicium,Nihonium,Flerovium,Moscovium,Livermorium,Tennessine,Oganesson'.split(',');
+function elPos(z) {              // -> [row, col] on a grid with a spacer row 8 and f-block rows 9-10
+  if (z === 1) return [1, 1]; if (z === 2) return [1, 18];
+  if (z >= 57 && z <= 71) return [9, 3 + z - 57];
+  if (z >= 89 && z <= 103) return [10, 3 + z - 89];
+  const per = z <= 10 ? 2 : z <= 18 ? 3 : z <= 36 ? 4 : z <= 54 ? 5 : z <= 86 ? 6 : 7;
+  const start = { 2: 3, 3: 11, 4: 19, 5: 37, 6: 55, 7: 87 }[per];
+  const i = z - start;
+  if (per <= 3) return [per, i < 2 ? i + 1 : i + 11];
+  if (per <= 5) return [per, i + 1];
+  if (z <= 56 || (z >= 87 && z <= 88)) return [per, i + 1];
+  return [per, z - (per === 6 ? 72 : 104) + 4];
+}
+
+let DATA = null, R = [], PAP = [], byEl = new Map(), shelf = {}, BASE = null, REL = {}, AUGS = [], AUG_BY = new Map(), AUG_ROWS = new Map(), ELCMP = new Map();
+function indexData() {
+  R = DATA.records; PAP = DATA.papers; AUGS = DATA.augs;
+  R.forEach((r, i) => { r.i = i; r.pid = PAP[r.p].id; });
+  AUG_BY = new Map(AUGS.map(a => [a.n, a]));
+  byEl = new Map(); shelf = { mol: new Map(), mol2: new Map(), poly: new Map(), bio: new Map(), ox: new Map(), nat: new Map(), mod: new Map() }; ELCMP = new Map();
+  AUGS.forEach(a => { if (a.g === 'el') byEl.set(a.n, []); else shelf[a.g].set(a.n, []); (a.el || []).forEach(e => { if (!ELCMP.has(e)) ELCMP.set(e, []); ELCMP.get(e).push(a.n); }); });
+  R.forEach(r => (r.ag || []).forEach(i => { const a = AUGS[i]; (a.g === 'el' ? byEl.get(a.n) : shelf[a.g].get(a.n)).push(r); }));
+  AUG_ROWS = new Map(); byEl.forEach((v, k) => AUG_ROWS.set(k, v)); Object.values(shelf).forEach(m => m.forEach((v, k) => AUG_ROWS.set(k, v)));
+  BASE = summarise(R.filter(r => r.c === 'none'));
+  REL = {};
+  ['d', 'z', 'x'].forEach(k => { const m = new Map(); R.forEach(r => { if (r.f === 'characterization' || r[k] == null || r.v == null) return; const key = r.m + '|' + (r.u || ''); if (!m.has(key)) m.set(key, []); m.get(key).push(r); }); REL[k] = m; });
+}
+function summarise(rows) {
+  const cnt = k => { const m = new Map(); rows.forEach(r => { const v = r[k]; m.set(v, (m.get(v) || 0) + 1); }); return m; };
+  const nm = k => { const v = rows.map(r => r[k]).filter(v => v != null); return { n: v.length, med: median(v) }; };
+  return { n: rows.length, papers: new Set(rows.map(r => r.p)).size, d: nm('d'), z: nm('z'), x: nm('x'), a: nm('a'), l: nm('l'), fn: cnt('f'), rt: cnt('r'), lowConf: rows.filter(r => r.q != null && r.q < 0.6).length, q: median(rows.map(r => r.q)), rows };
+}
+function metricsFor(rows) {
+  const g = new Map(); rows.forEach(r => { if (r.v == null) return; if (!g.has(r.m)) g.set(r.m, []); g.get(r.m).push(r); });
+  return [...g].map(([m, rs]) => {
+    const uc = new Map(); rs.forEach(r => uc.set(r.u || '', (uc.get(r.u || '') || 0) + 1));
+    const unit = [...uc].sort((a, b) => b[1] - a[1])[0][0];
+    const vals = rs.filter(r => (r.u || '') === unit).map(r => r.v);
+    return { m, n: rs.length, unit, med: median(vals), nu: vals.length };
+  }).sort((a, b) => (/coli/i.test(b.m) - /coli/i.test(a.m)) || b.n - a.n);
+}
+function topPapers(rows, k) {
+  const c = new Map(); rows.forEach(r => c.set(r.p, (c.get(r.p) || 0) + 1));
+  return [...c].sort((a, b) => b[1] - a[1]).slice(0, k).map(([p, n]) => ({ p: PAP[p], n }));
+}
+function paperHTML(list, H) {
+  return list.map(({ p, n }) => {
+    const who = p.label || p.id;
+    const t = p.title ? esc(p.title.length > 92 ? p.title.slice(0, 90) + '…' : p.title) : '';
+    const link = p.doi ? ` <a href="https://doi.org/${esc(p.doi)}" target="_blank" rel="noopener" data-doi="${esc(p.id)}">DOI</a>` : '';
+    return `<div class="paper"><b>${esc(who)}</b> <span class="muted mono">${esc(p.id)} · ${n} rec.</span>${link}<span class="t">${t}</span></div>`;
+  }).join('');
+}
+const tipEl = () => document.querySelector('.xfx .tip');
+function showTip(html, x, y) { const t = tipEl(); t.innerHTML = html; t.hidden = false; const w = t.offsetWidth, h = t.offsetHeight; t.style.left = Math.min(innerWidth - w - 8, x + 14) + 'px'; t.style.top = Math.max(8, Math.min(innerHeight - h - 8, y + 14)) + 'px'; }
+const hideTip = () => { tipEl().hidden = true; };
+
+/* ============================================================ PROTOTYPE A: periodic dock */
+function mainClass(rows) { const c = new Map(); rows.forEach(r => c.set(r.c, (c.get(r.c) || 0) + 1)); return [...c].sort((a, b) => b[1] - a[1])[0][0]; }
+const disp = n => { const t = n.split(/[ (]/)[0]; return /^[a-z-]+$/.test(t) ? n[0].toUpperCase() + n.slice(1) : n; };
+const structOf = (cls, lab) => (DATA.structs && DATA.structs[lab]) || null;
+function selInfo(sel) {
+  if (!sel) return null;
+  const rows = sel.kind === 'el' ? byEl.get(sel.sym) : (AUG_ROWS.get(sel.label) || []);
+  const S = summarise(rows); S.sel = sel; S.set = new Set(rows);
+  S.short = sel.kind === 'el' ? sel.sym : disp(sel.label);
+  S.title = sel.kind === 'el' ? `${EL_NAME[EL_SYM.indexOf(sel.sym)]} (${sel.sym}), metal or ion` : disp(sel.label);
+  S.cls = sel.kind === 'el' ? 'metal' : (AUG_BY.get(sel.label) || {}).c || 'organic';
+  return S;
+}
+const selKey = s => s.kind === 'el' ? s.sym : s.cls + ':' + s.label;
+function mountDock(root, H) {
+  const st = { mode: 'all', sel: null, cmp: null, cmpMode: false, lvl: 'mol', sub: 'poly', q: '', elf: null, relX: 'd', relM: null, open: null };
+  const fnModes = ['antimicrobial', 'antioxidant', 'catalytic', 'drug_delivery', 'mechanical', 'uv_shielding', 'adsorption', 'anticancer'];
+  root.innerHTML = `<div class="dock">
+    <section class="card dock-left" aria-label="Elements">
+      <div class="row" style="justify-content:space-between"><h2 id="lefttitle">Choose an augmentation</h2><span class="muted" style="font-size:12.5px">Drag a tile onto the particle, or click it.</span></div>
+      <div><div class="muted" style="font-size:12px;margin-bottom:5px">Colour elements by number of records</div><div class="chips" id="modes"></div></div>
+      <div class="ptwrap"><div class="pt" id="pt" role="group" aria-label="Periodic table"></div></div>
+      <div class="ramp"><span>fewer</span><i></i><span>more records</span><span style="margin-left:12px">Dashed = in the database, none for this function</span></div>
+      <div class="shelf">
+        <div class="muted" style="font-size:12px">Every augmentation in the database is its own entry. The table above holds the metals and metal ions only. Drag an entry onto the particle, or click it. Entries made of several parts (for example ZnO plus curcumin) appear under each part.</div>
+        <div class="tabs" role="tablist" id="shelftabs" aria-label="Augmentation level"></div>
+        <div class="row" style="gap:8px;flex-wrap:wrap"><input id="shq" type="search" class="srch" aria-label="Search augmentations" placeholder="Search by name"><div class="chips" id="subtabs" role="group" aria-label="Group"></div><span id="elfchip"></span></div>
+        <div id="shelfchips" aria-live="polite"></div>
+      </div>
+    </section>
+    <section class="card dock-right" id="drop" aria-live="polite"></section>
+  </div>`;
+  const drop = $('#drop', root);
+
+  function modeRows(sym) { const rs = byEl.get(sym) || []; return st.mode === 'all' ? rs : rs.filter(r => r.f === st.mode); }
+  function buildTable() {
+    const pt = $('#pt', root); pt.innerHTML = '';
+    let max = 1; EL_SYM.forEach(s => { if (byEl.has(s)) max = Math.max(max, modeRows(s).length); });
+    EL_SYM.forEach((sym, i) => {
+      const z = i + 1, [row, col] = elPos(z), has = byEl.has(sym), cmpOnly = !has && ELCMP.has(sym);
+      const gr = row <= 7 ? row : row + 1;
+      const c = document.createElement(has ? 'button' : 'div');
+      c.className = 'el' + (has ? ' has' : ' off');
+      c.style.gridRow = gr; c.style.gridColumn = col;
+      let n = 0;
+      if (has) {
+        n = modeRows(sym).length;
+        const t = n ? Math.log1p(n) / Math.log1p(max) : 0;
+        c.style.setProperty('--t', t.toFixed(3));
+        if (!n) c.classList.add('nil'); else if (t > .55) c.classList.add('hi');
+        c.dataset.sym = sym; c.type = 'button';
+        c.setAttribute('aria-label', `${EL_NAME[i]}, ${n} records` + (st.mode === 'all' ? '' : ' for ' + FN_LABEL[st.mode]));
+        if (st.sel && st.sel.kind === 'el' && st.sel.sym === sym) c.classList.add('sel');
+        if (st.cmp && st.cmp.kind === 'el' && st.cmp.sym === sym) c.classList.add('selb');
+      } else if (cmpOnly) { c.dataset.cmpel = sym; c.type = 'button'; c.className = 'el cmp'; c.title = EL_NAME[i] + ': only as a compound (' + ELCMP.get(sym).join(', ') + '). Click to list them.'; c.setAttribute('aria-label', `${EL_NAME[i]}, compounds only: ${ELCMP.get(sym).join(', ')}`); }
+      else c.title = EL_NAME[i] + ': no records';
+      c.innerHTML = `<span class="z">${z}</span><span class="s">${sym}</span><span class="n">${has ? n : (cmpOnly ? 'cmpd' : '')}</span>`;
+      pt.appendChild(c);
+    });
+  }
+  function buildModes() {
+    $('#modes', root).innerHTML = [['all', 'All functions']].concat(fnModes.map(f => [f, FN_LABEL[f]])).map(([k, l]) => `<button class="chip" type="button" data-mode="${k}" aria-pressed="${st.mode === k}">${esc(l)}</button>`).join('');
+  }
+  const GRP = { poly: 'Polymers and matrices', bio: 'Biomolecules', ox: 'Oxides, salts and inorganics', nat: 'Natural mixtures', mod: 'Lignin modifications and generic labels', mol2: 'Small molecules, structure not drawn' };
+  const cnt = m => [...m.values()].reduce((a, b) => a + b.length, 0);
+  function buildShelf() {
+    const nMol = shelf.mol.size, nOther = ['poly', 'bio', 'ox', 'nat', 'mod', 'mol2'].reduce((a, k) => a + shelf[k].size, 0);
+    $('#shelftabs', root).innerHTML = [['mol', 'Molecules with a structure', nMol], ['list', 'Other augmentations', nOther]].map(([k, l, n]) => `<button role="tab" type="button" data-lvl="${k}" aria-selected="${st.lvl === k}">${l}<span class="muted mono" style="margin-left:6px;font-size:11px">${n}</span></button>`).join('');
+    const sb = $('#subtabs', root); sb.style.display = st.lvl === 'list' ? '' : 'none';
+    sb.innerHTML = Object.keys(GRP).map(k => `<button class="chip" type="button" data-sub="${k}" aria-pressed="${st.sub === k}">${GRP[k]} <span class="mono" style="font-size:10.5px">${shelf[k].size}</span></button>`).join('');
+    $('#elfchip', root).innerHTML = (st.elf && st.lvl === 'list') ? `<button class="chip" type="button" data-elclear aria-label="Clear element filter">Contains ${st.elf} ×</button>` : '';
+    const q = st.q.trim().toLowerCase(), host = $('#shelfchips', root);
+    const grp = st.lvl === 'mol' ? shelf.mol : shelf[st.sub];
+    let items = [...grp].filter(([n]) => (!q || n.toLowerCase().includes(q)) && (!(st.elf && st.lvl === 'list') || (AUG_BY.get(n).el || []).includes(st.elf))).sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0]));
+    const mx = Math.max(1, ...items.map(i => i[1].length));
+    const on = lab => (st.sel && st.sel.kind === 'sp' && st.sel.label === lab) || (st.cmp && st.cmp.kind === 'sp' && st.cmp.label === lab);
+    if (!items.length) { host.className = ''; host.innerHTML = '<p class="muted" style="font-size:12.5px">No match in this group.</p>'; return; }
+    if (st.lvl === 'mol') {
+      host.className = 'molgrid';
+      host.innerHTML = items.map(([lab, rs]) => { const t = (Math.log1p(rs.length) / Math.log1p(mx)).toFixed(2);
+        return `<button class="mol draggable" type="button" data-sp="${esc(lab)}" data-g="mol" aria-pressed="${!!on(lab)}" style="--t:${t}" aria-label="${esc(lab)}, ${rs.length} records"><span class="st">${structOf(0, lab)}</span><span class="nm"><span>${esc(disp(lab))}</span><span class="n">${rs.length}</span></span></button>`; }).join('');
+    } else {
+      host.className = 'alist';
+      host.innerHTML = items.map(([lab, rs]) => { const t = (Math.log1p(rs.length) / Math.log1p(mx)).toFixed(2), a = AUG_BY.get(lab), pp = new Set(rs.map(r => r.p)).size;
+        return `<button class="arow draggable" type="button" data-sp="${esc(lab)}" data-g="${a.g}" aria-pressed="${!!on(lab)}" style="--t:${t}" aria-label="${esc(lab)}, ${rs.length} records from ${pp} papers"><span class="an">${esc(disp(lab))}${(a.el || []).map(e => `<span class="eltag">${e}</span>`).join('')}</span><span class="ap">${pp} paper${pp === 1 ? '' : 's'}</span><span class="n">${rs.length}</span></button>`; }).join('');
+    }
+  }
+  const rOf = d => { const lo = Math.log10(30), hi = Math.log10(1000); const t = (Math.log10(Math.min(Math.max(d, 30), 1000)) - lo) / (hi - lo); return 50 + t * 70; };
+  const STRANDS = [[-.7, -.2, -.1, -.8, .5, -.5], [-.8, .3, -.2, .1, .6, .2], [-.3, .8, .1, .4, .8, -.1], [.2, -.9, .5, -.3, .9, .3], [-.9, -.5, -.4, -.9, .1, -.7], [-.5, .6, .2, .9, .7, .5]];
+  const TAGC = ['var(--ca)', 'var(--cb)'];
+  function specimenSVG(items) {
+    const d0 = BASE.d.med, two = items.length === 2, k = two ? .62 : 1, cxs = two ? [86, 234] : [160], cy = 140;
+    const list = items.length ? items : [null];
+    let defs = `<defs><radialGradient id="lg" cx=".36" cy=".3" r=".85"><stop offset="0" stop-color="#E9F0F6"/><stop offset=".5" stop-color="#A9C0D3"/><stop offset="1" stop-color="#5B7894"/></radialGradient>`, body = '', texts = '', aria = [];
+    list.forEach((S, i) => {
+      const cx = cxs[i], d1 = S ? S.d.med : d0, r0 = rOf(d0) * k, r = (d1 != null ? rOf(d1) : rOf(d0)) * k;
+      defs += `<clipPath id="cp${i}"><circle cx="${cx}" cy="${cy}" r="${r}"/></clipPath>`;
+      const col = S ? CLS_COLOR[S.cls] : 'transparent';
+      let strands = ''; STRANDS.forEach(s => { strands += `<path d="M${cx + s[0] * r} ${cy + s[1] * r} Q ${cx + s[2] * r} ${cy + s[3] * r} ${cx + s[4] * r} ${cy + s[5] * r}" stroke="#ffffff" stroke-opacity=".45" stroke-width="1.6" fill="none"/>`; });
+      let dots = '';
+      if (S) {
+        const a = S.a.med, known = a != null, rd = (known ? 2.6 + Math.sqrt(Math.min(a, 95) / 95) * 9 : 4.5) * (two ? .78 : 1);
+        for (let j = 0; j < 11; j++) {
+          const ang = j * 2.39996 + .4, rr = r * (j % 2 ? .97 : 1.03), x = cx + Math.cos(ang) * rr, y = cy + Math.sin(ang) * rr;
+          dots += known ? `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${rd.toFixed(1)}" fill="${col}" style="stroke:var(--panel)" stroke-width="2"/>`
+            : `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${rd}" fill="none" stroke="${col}" stroke-width="1.6" stroke-dasharray="2 2"/>`;
+        }
+      }
+      body += (S ? `<circle cx="${cx}" cy="${cy}" r="${r0}" fill="none" style="stroke:var(--muted)" stroke-opacity=".7" stroke-dasharray="4 4"/>` : `<circle cx="${cx}" cy="${cy}" r="${r + 16}" fill="none" style="stroke:var(--ca)" stroke-opacity=".5" stroke-dasharray="3 6"/>`)
+        + `<circle cx="${cx}" cy="${cy}" r="${r}" fill="url(#lg)"/><g clip-path="url(#cp${i})">${strands}</g><g class="drift">${dots}</g>`;
+      const T = S || BASE, zt = T.z.med == null ? 'zeta not reported' : `ζ ${(T.z.med > 0 ? '+' : '') + num(T.z.med, 0)} mV`, st1 = d1 != null ? `median ${num(d1)} nm` : 'size not reported';
+      if (two) body += `<text class="tag" x="${cx}" y="${cy - r - 10}" text-anchor="middle" style="fill:${TAGC[i]}">${i ? 'B' : 'A'} · ${esc(S.short.length > 14 ? S.short.slice(0, 13) + '…' : S.short)}</text>`;
+      texts += `<text x="${cx}" y="${two ? 286 : 290}" text-anchor="middle">${st1}${!two && S ? ` (bare ${num(d0)})` : ''}</text><text x="${cx}" y="${two ? 302 : 306}" text-anchor="middle">${zt}</text>`;
+      aria.push(`${S ? S.title : 'Bare LNP'}: ${st1}, ${zt}`);
+    });
+    return `<svg viewBox="0 0 320 316" role="img" aria-label="${esc(aria.join('; '))}">${defs}</defs>${body}${texts}</svg>`;
+  }
+  function delta(v, b) { if (v == null || b == null) return ''; const p = (v - b) / Math.abs(b) * 100; return `${p >= 0 ? '+' : '−'}${Math.abs(Math.round(p))}% vs bare`; }
+
+  /* size-vs-activity */
+  const REL_LABEL = { d: 'LNP size (DLS, nm)', z: 'Zeta potential (mV)', x: 'PDI' };
+  function relList() { return [...REL[st.relX]].filter(([, rs]) => rs.length >= 5).sort((a, b) => (/coli/i.test(b[0]) - /coli/i.test(a[0])) || b[1].length - a[1].length); }
+  function relDefault(A, B, list) {
+    let best = null, bn = -1;
+    list.forEach(([k, rs]) => { const n = rs.filter(r => (A && A.set.has(r)) || (B && B.set.has(r))).length; if (n > bn) { bn = n; best = k; } });
+    return best || (list[0] && list[0][0]);
+  }
+  const metricLabel = k => { const [m, u] = k.split('|'); return m.replace(/_/g, ' ') + (u ? ` (${u})` : ''); };
+  function relHTML() { return `<div class="sect" id="relwrap"></div>`; }
+  function renderRel() {
+    const wrap = $('#relwrap', root); if (!wrap) return;
+    const A = st.sel ? selInfo(st.sel) : null, B = st.cmp ? selInfo(st.cmp) : null;
+    const list = relList();
+    if (!list.length) { wrap.innerHTML = `<h3>Size vs activity</h3><p class="muted" style="font-size:12.5px">Too few records report both this property and an activity value.</p>`; return; }
+    if (!st.relM || !list.some(([k]) => k === st.relM)) st.relM = relDefault(A, B, list);
+    const pooled = REL[st.relX].get(st.relM) || [];
+    const inA = r => A && A.set.has(r), inB = r => B && B.set.has(r);
+    const nA = pooled.filter(inA).length, nB = pooled.filter(inB).length;
+    const pap = rs => new Set(rs.map(r => r.p)).size;
+    let cap = `<span class="muted">All materials: <b class="mono">${pooled.length}</b> points from ${pap(pooled)} paper${pap(pooled) === 1 ? "" : "s"}</span>`;
+    if (A) cap = `<span class="ab a">A</span> ${esc(A.short)}: <b class="mono">${nA}</b> point${nA === 1 ? '' : 's'}${nA ? ` from ${pap(pooled.filter(inA))} paper${pap(pooled.filter(inA)) === 1 ? '' : 's'}` : ''}` + (B ? ` &nbsp; <span class="ab b">B</span> ${esc(B.short)}: <b class="mono">${nB}</b> point${nB === 1 ? '' : 's'}` : '') + `<br>${cap}`;
+    const one = (A && nA && pap(pooled.filter(inA)) < 2) || (B && nB && pap(pooled.filter(inB)) < 2);
+    wrap.innerHTML = `<h3>Size vs activity</h3>
+      <div class="row" style="gap:8px;margin-bottom:6px"><span class="seg" id="relx">${[['d', 'Size'], ['z', 'Zeta'], ['x', 'PDI']].map(([k, l]) => `<button type="button" data-relx="${k}" aria-pressed="${st.relX === k}">${l}</button>`).join('')}</span>
+      <select id="relM" aria-label="Activity metric">${list.map(([k, rs]) => `<option value="${esc(k)}"${k === st.relM ? ' selected' : ''}>${esc(metricLabel(k))} · ${rs.length}</option>`).join('')}</select></div>
+      <svg id="rel" class="rel" role="img" aria-label="Scatter of ${esc(REL_LABEL[st.relX])} against ${esc(metricLabel(st.relM))}"></svg>
+      <p class="legendcap">${cap}</p>
+      ${one ? '<p class="legendcap" style="color:var(--warn)">All of these points come from one paper, so a trend could be a lab effect, not the material.</p>' : ''}
+      <p class="legendcap">Each paper uses its own assay. Compare within one metric only. Grey dots are every other material with that metric.</p>`;
+    drawRel(pooled, inA, inB);
+  }
+  function drawRel(pooled, inA, inB) {
+    const svg = $('#rel', root), W = 380, Ht = 215, m = { l: 44, r: 12, t: 10, b: 40 };
+    const xs = pooled.map(r => r[st.relX]), ys = pooled.map(r => r.v);
+    let x;
+    if (st.relX === 'd') x = d3.scaleLog().domain([Math.min(...xs) * .8, Math.max(...xs) * 1.25]);
+    else { const lo = Math.min(...xs), hi = Math.max(...xs), pad = (hi - lo || 1) * .08; x = d3.scaleLinear().domain([lo - pad, hi + pad]); }
+    x.range([m.l, W - m.r]);
+    const ymin = Math.min(...ys), ymax = Math.max(...ys), logY = ymin > 0 && ymax / ymin > 30;
+    const y = (logY ? d3.scaleLog().domain([ymin * .7, ymax * 1.4]) : d3.scaleLinear().domain([Math.min(0, ymin), ymax + (ymax - ymin || 1) * .08]).nice()).range([Ht - m.b, m.t]);
+    const s = d3.select(svg); s.selectAll('*').remove(); s.attr('viewBox', `0 0 ${W} ${Ht}`);
+    s.append('g').attr('transform', `translate(0,${Ht - m.b})`).call(d3.axisBottom(x).ticks(5, st.relX === 'd' ? '~s' : undefined).tickSizeOuter(0));
+    s.append('g').attr('transform', `translate(${m.l},0)`).call(d3.axisLeft(y).ticks(5, logY ? '~s' : undefined).tickSizeOuter(0));
+    s.append('text').attr('class', 'axl').attr('x', W - m.r).attr('y', Ht - 4).attr('text-anchor', 'end').text(REL_LABEL[st.relX] + (st.relX === 'd' ? ', log' : ''));
+    s.append('text').attr('class', 'axl').attr('x', m.l + 4).attr('y', m.t + 8).text(logY ? 'log scale' : '');
+    const order = r => (inA(r) ? 1 : 0) + (inB(r) ? 2 : 0);
+    pooled.slice().sort((a, b) => order(a) - order(b)).forEach(r => {
+      const o = order(r), c = s.append('circle').attr('cx', x(r[st.relX])).attr('cy', y(r.v)).attr('r', o ? 5.5 : 3.6)
+        .style('fill', o === 1 || o === 3 ? 'var(--ca)' : o === 2 ? 'var(--cb)' : '#8C96A3').attr('fill-opacity', o ? 1 : .55).style('stroke', o ? 'var(--panel)' : 'none').attr('stroke-width', 1.5);
+      c.on('pointermove', e => showTip(`<b>${esc(r.s)}</b> · ${esc(PAP[r.p].label)}<br>${REL_LABEL[st.relX].split(' (')[0]}: <span class="mono">${num(r[st.relX])}</span><br>${esc(r.m.replace(/_/g, ' '))}: <span class="mono">${num(r.v)}</span> ${esc(r.u || '')}`, e.clientX, e.clientY)).on('pointerleave', hideTip);
+    });
+  }
+
+  function detail(S, tag, n) {
+    const rts = [...S.rt].sort((a, b) => b[1] - a[1]);
+    let h = `<div class="sect">${tag ? `<h3><span class="ab ${tag}">${tag.toUpperCase()}</span> ${esc(S.short)}: how it was attached</h3>` : '<h3>How it was attached</h3>'}<div class="stackbar">${rts.map(([k, v], i) => `<i style="width:${v / S.n * 100}%;background:${PALETTE[i % PALETTE.length]}" title="${esc(ROUTE_LABEL[k] || 'Not stated')}: ${v}"></i>`).join('')}</div>
+      <div class="keys">${rts.slice(0, 5).map(([k, v], i) => `<span style="--k:${PALETTE[i % PALETTE.length]}">${esc(ROUTE_LABEL[k] || 'Not stated')} ${v}</span>`).join('')}</div></div>`;
+    const fns = [...S.fn].filter(([k]) => k !== 'characterization').sort((a, b) => b[1] - a[1]), maxF = fns.length ? fns[0][1] : 1;
+    h += `<div class="sect"><h3>${tag ? `<span class="ab ${tag}">${tag.toUpperCase()}</span> ` : ''}What it was tested for</h3>${fns.length ? fns.map(([k, v]) => { const id = (tag || 'a') + k, open = st.open === id; return `<div class="fnrow"><button type="button" data-fn="${id}" aria-expanded="${open}"><span>${esc(FN_LABEL[k])}</span><span class="mono muted">${v}</span><span class="bar"><i style="width:${v / maxF * 100}%"></i></span></button>${open ? `<div class="met">${metricsFor(S.rows.filter(r => r.f === k)).slice(0, 5).map(mm => `<div><b>${esc(mm.m.replace(/_/g, ' '))}</b> median ${num(mm.med)} ${esc(mm.unit)} <span class="mono">n=${mm.nu}</span>${/(^|_)(MIC|MBC|IC50|EC50|LOD)/i.test(mm.m) ? ' <span class="muted">(lower is better)</span>' : ''}</div>`).join('')}</div>` : ''}</div>`; }).join('') : '<p class="muted">Only characterization data for this augmentation.</p>'}</div>`;
+    h += `<div class="sect"><h3>Where it comes from</h3><div class="papers">${paperHTML(topPapers(S.rows, n), H)}</div></div>`;
+    return h;
+  }
+  function renderDock() {
+    const A = st.sel ? selInfo(st.sel) : null, B = st.cmp ? selInfo(st.cmp) : null, T = A || BASE;
+    root.classList.toggle('cmp-on', st.cmpMode);
+    const chip = (S, t, key) => `<span class="abchip ${t}"><b>${t.toUpperCase()}</b> ${esc(S.title)}<button type="button" data-clear="${t}" aria-label="Remove ${esc(S.short)}">×</button></span>`;
+    let h = '';
+    if (!A) h += `<div><h2>Bare LNP baseline</h2><p class="sub">${BASE.n} control records from ${BASE.papers} papers. Dock an augmentation to compare.</p></div>`;
+    else h += `<div><div class="row" style="gap:6px;margin-bottom:8px">${chip(A, 'a')}${B ? chip(B, 'b') : `<button class="btn small" type="button" data-cmp>${st.cmpMode ? 'Now pick B on the table…' : 'Compare with another'}</button>`}</div>
+      ${!B && A.sel.kind === 'sp' && structOf(0, A.sel.label) ? `<div class="dockstruct" role="img" aria-label="Structure of ${esc(A.short)}">${structOf(0, A.sel.label)}</div>` : ''}
+      <h2>${B ? `${esc(A.short)} vs ${esc(B.short)}` : `${esc(A.title)} on LNP`}</h2>
+      <p class="sub">${A.n} records from ${A.papers} paper${A.papers === 1 ? '' : 's'}${A.n < 5 ? ' <span class="badge warn">thin evidence</span>' : ''}${B ? ` · ${B.n} records from ${B.papers} paper${B.papers === 1 ? '' : 's'}${B.n < 5 ? ' <span class="badge warn">thin evidence</span>' : ''}` : ''}</p></div>`;
+    h += `<div class="specimen">${specimenSVG([A, B].filter(Boolean))}</div>
+      <p class="legendcap">Particle radius follows median DLS size (log scale). Dashed ring is the bare-LNP median. Dots show metal domain size where reported. Dot positions are illustrative.</p>`;
+    const tile = (k, key, unit, dp) => {
+      if (B) return `<div class="tile"><div class="k">${k}</div><div class="v"><span class="ab a">A</span>${num(A[key].med, dp)}<small>${unit}</small></div><div class="v"><span class="ab b">B</span>${num(B[key].med, dp)}</div><div class="d">n=${A[key].n} / ${B[key].n}</div></div>`;
+      const o = T[key], base = A && ['d', 'z', 'x'].includes(key) ? BASE[key] : null;
+      return `<div class="tile"><div class="k">${k}</div><div class="v">${num(o.med, dp)}${o.med != null && unit ? `<small>${unit}</small>` : ''}</div><div class="d">n=${o.n}${A && base && o.n >= 3 ? ' · ' + delta(o.med, base.med) : (A && base && o.n ? ' · too few to compare' : '')}</div></div>`;
+    };
+    h += `<div class="tiles">${tile('LNP size (DLS)', 'd', 'nm')}${tile('Zeta potential', 'z', 'mV', 0)}${tile('PDI', 'x', '', 2)}${tile('Domain size', 'a', 'nm')}${tile('Loading', 'l', 'wt%')}
+      <div class="tile"><div class="k">Extraction confidence</div>${B ? `<div class="v"><span class="ab a">A</span>${A.q != null ? num(A.q, 2) : '–'}</div><div class="v"><span class="ab b">B</span>${B.q != null ? num(B.q, 2) : '–'}</div>` : `<div class="v">${T.q != null ? num(T.q, 2) : '–'}</div><div class="d">${T.lowConf} below 0.6</div>`}</div></div>`;
+    h += relHTML();
+    if (A) { h += detail(A, B ? 'a' : '', B ? 3 : 4); if (B) h += detail(B, 'b', 3); }
+    else h += `<p class="muted" style="font-size:12.5px">Records are literature values extracted from ${PAP.length} papers. Nothing on this page is a model prediction.</p>`;
+    drop.innerHTML = h;
+    renderRel();
+  }
+  function renderAll() { buildModes(); buildTable(); buildShelf(); renderDock(); }
+  function dockSel(sel, how) {
+    if (st.cmpMode) { st.cmp = sel; st.cmpMode = false; H.log('compare-set', selKey(sel) + ' via ' + how); }
+    else { st.sel = sel; H.log('dock', selKey(sel) + ' via ' + how); }
+    st.open = null; st.relM = null;
+    renderAll();
+    drop.animate([{ transform: 'scale(.985)' }, { transform: 'scale(1)' }], { duration: 220, easing: 'ease-out' });
+  }
+  const pick = t => t.dataset.sym ? { kind: 'el', sym: t.dataset.sym } : { kind: 'sp', cls: t.dataset.g, label: t.dataset.sp };
+  let drag = null, ghost = null, hoverT = null, hoverK = null;
+  const overDrop = (x, y) => { const b = drop.getBoundingClientRect(); return x >= b.left && x <= b.right && y >= b.top && y <= b.bottom; };
+  function onDown(e) { const t = e.target.closest('[data-sym],[data-sp]'); if (!t || e.button > 0) return; drag = { t, x: e.clientX, y: e.clientY, moved: false, touch: e.pointerType === 'touch' }; }
+  function onMove(e) {
+    if (!drag || drag.touch) return;
+    if (!drag.moved && Math.hypot(e.clientX - drag.x, e.clientY - drag.y) > 6) { drag.moved = true; ghost = document.createElement('div'); ghost.className = 'ghost'; ghost.textContent = drag.t.dataset.sym || drag.t.dataset.sp; document.querySelector('.xfx').appendChild(ghost); }
+    if (drag.moved) { ghost.style.left = e.clientX + 'px'; ghost.style.top = e.clientY + 'px'; drop.classList.toggle('over', overDrop(e.clientX, e.clientY)); }
+  }
+  function onUp(e) {
+    if (!drag) return;
+    const d = drag; drag = null; drop.classList.remove('over'); if (ghost) { ghost.remove(); ghost = null; }
+    if (d.moved) { if (overDrop(e.clientX, e.clientY)) dockSel(pick(d.t), 'drag'); else H.log('drag-missed', d.t.dataset.sym || d.t.dataset.sp); d.t.dataset.swallow = '1'; setTimeout(() => delete d.t.dataset.swallow, 0); }
+  }
+  root.addEventListener('pointerdown', onDown); document.addEventListener('pointermove', onMove); document.addEventListener('pointerup', onUp);
+  root.addEventListener('click', e => {
+    const m = e.target.closest('[data-mode]'); if (m) { st.mode = m.dataset.mode; H.log('mode', st.mode); renderAll(); return; }
+    const lv = e.target.closest('[data-lvl]'); if (lv) { st.lvl = lv.dataset.lvl; if (st.lvl === 'mol') st.elf = null; H.log('level', st.lvl); buildShelf(); return; }
+    const sub = e.target.closest('[data-sub]'); if (sub) { st.sub = sub.dataset.sub; H.log('group', st.sub); buildShelf(); return; }
+    if (e.target.closest('[data-elclear]')) { st.elf = null; buildShelf(); return; }
+    const ce = e.target.closest('[data-cmpel]'); if (ce) { st.lvl = 'list'; st.sub = 'ox'; st.elf = ce.dataset.cmpel; H.log('compound-element', st.elf); buildShelf(); $('#shelftabs', root).scrollIntoView({ block: 'nearest', behavior: 'smooth' }); return; }
+    const f = e.target.closest('[data-fn]'); if (f) { st.open = st.open === f.dataset.fn ? null : f.dataset.fn; H.log('fn-open', f.dataset.fn); renderDock(); return; }
+    const a = e.target.closest('a[data-doi]'); if (a) { H.log('paper-link', a.dataset.doi); return; }
+    const cl = e.target.closest('[data-clear]'); if (cl) { if (cl.dataset.clear === 'a') { st.sel = st.cmp; st.cmp = null; } else st.cmp = null; st.cmpMode = false; st.relM = null; H.log('clear', cl.dataset.clear); renderAll(); return; }
+    if (e.target.closest('[data-cmp]')) { st.cmpMode = !st.cmpMode; H.log('compare-mode', st.cmpMode); renderDock(); return; }
+    const rx = e.target.closest('[data-relx]'); if (rx) { st.relX = rx.dataset.relx; st.relM = null; H.log('rel-x', st.relX); renderRel(); return; }
+    const t = e.target.closest('[data-sym],[data-sp]'); if (!t || t.dataset.swallow) return;
+    dockSel(pick(t), 'click');
+  });
+  root.addEventListener('input', e => { if (e.target.id === 'shq') { st.q = e.target.value; buildShelf(); } });
+  root.addEventListener('change', e => { if (e.target.id === 'relM') { st.relM = e.target.value; H.log('rel-metric', st.relM); renderRel(); } });
+  root.addEventListener('pointermove', e => {
+    if (e.pointerType === 'touch') return;
+    const t = e.target.closest('.el.has');
+    if (!t || drag) { if (!t) { hideTip(); clearTimeout(hoverT); hoverK = null; } return; }
+    const sym = t.dataset.sym, rs = modeRows(sym);
+    if (hoverK !== sym) { hoverK = sym; clearTimeout(hoverT); hoverT = setTimeout(() => H.log('hover', sym), 700); }
+    showTip(`<b>${EL_NAME[EL_SYM.indexOf(sym)]}</b><br><span class="mono">${rs.length}</span> records${st.mode === 'all' ? '' : ' for ' + esc(FN_LABEL[st.mode])}<br><span class="muted">${new Set(rs.map(r => r.p)).size} papers</span>`, e.clientX, e.clientY);
+  });
+  root.addEventListener('pointerleave', () => { hideTip(); clearTimeout(hoverT); hoverK = null; });
+  renderAll();
+  return { destroy() { document.removeEventListener('pointermove', onMove); document.removeEventListener('pointerup', onUp); hideTip(); clearTimeout(hoverT); if (ghost) ghost.remove(); } };
+}
+
+/* ============================================================ PROTOTYPE B: flow */
+function mountFlow(root, H) {
+  const st = { recipe: 'class', struct: 'none', hideNR: false, showChar: false, controls: true, sel: null, hover: null };
+  root.innerHTML = `<div class="flow">
+    <div class="card ftools">
+      <span><span class="lab">Recipe by</span><span class="seg" id="s-recipe"><button type="button" data-v="class" aria-pressed="true">Class</button><button type="button" data-v="route" aria-pressed="false">Route</button></span></span>
+      <span><span class="lab">Split by structure</span><span class="seg" id="s-struct"><button type="button" data-v="none" aria-pressed="true">None</button><button type="button" data-v="size" aria-pressed="false">Size</button><button type="button" data-v="zeta" aria-pressed="false">Zeta</button><button type="button" data-v="pdi" aria-pressed="false">PDI</button></span></span>
+      <label class="chk"><input type="checkbox" id="c-nr" disabled> Hide “not reported”</label>
+      <label class="chk"><input type="checkbox" id="c-char"> Show characterization records</label>
+      <label class="chk"><input type="checkbox" id="c-ctl" checked> Include bare-LNP controls</label>
+    </div>
+    <div class="fgrid"><section class="card fmain"><div class="fsum" id="fsum"></div><div class="swrap"><svg id="sk" role="group" aria-label="Sankey diagram from augmentation recipe to tested function, optionally split by particle structure"></svg></div></section>
+    <aside class="card fside" id="fside" aria-live="polite"></aside></div></div>`;
+  const BINS = {
+    size: { title: 'DLS size', f: r => r.d == null ? 'Not reported' : r.d < 100 ? '< 100 nm' : r.d < 200 ? '100–200 nm' : r.d < 400 ? '200–400 nm' : '> 400 nm', order: ['< 100 nm', '100–200 nm', '200–400 nm', '> 400 nm', 'Not reported'] },
+    zeta: { title: 'Zeta potential', f: r => r.z == null ? 'Not reported' : r.z <= -40 ? '≤ −40 mV' : r.z <= -20 ? '−40 to −20 mV' : r.z <= 0 ? '−20 to 0 mV' : '> 0 mV', order: ['≤ −40 mV', '−40 to −20 mV', '−20 to 0 mV', '> 0 mV', 'Not reported'] },
+    pdi: { title: 'PDI', f: r => r.x == null ? 'Not reported' : r.x <= .1 ? '≤ 0.1' : r.x <= .2 ? '0.1–0.2' : r.x <= .3 ? '0.2–0.3' : '> 0.3', order: ['≤ 0.1', '0.1–0.2', '0.2–0.3', '> 0.3', 'Not reported'] }
+  };
+  const recipeKey = r => st.recipe === 'class' ? CLS_LABEL[r.c] : (ROUTE_LABEL[r.r] || 'Not stated');
+  let cur = null;       // { gr, roles, color, linkEls, nodeEls }
+  const lab = id => id.split('|').slice(1).join('|');
+  function build() {
+    let rows = R.filter(r => (st.showChar || r.f !== 'characterization') && (st.controls || r.c !== 'none'));
+    const useS = st.struct !== 'none'; let hidden = 0;
+    if (useS && st.hideNR) { const f = BINS[st.struct].f, b = rows.length; rows = rows.filter(r => f(r) !== 'Not reported'); hidden = b - rows.length; }
+    const fns = [recipeKey].concat(useS ? [BINS[st.struct].f] : []).concat([r => FN_LABEL[r.f]]);
+    const roles = useS ? ['recipe', 'struct', 'fn'] : ['recipe', 'fn'];
+    const nodes = new Map(), links = new Map();
+    rows.forEach(r => {
+      const ids = fns.map((f, l) => { const label = f(r), id = l + '|' + label; if (!nodes.has(id)) nodes.set(id, { id, layer: l, role: roles[l], label, items: [] }); return id; });
+      const it = { r, ids }; ids.forEach(id => nodes.get(id).items.push(it));
+      for (let l = 0; l < ids.length - 1; l++) { const k = ids[l] + '>' + ids[l + 1]; if (!links.has(k)) links.set(k, { source: ids[l], target: ids[l + 1], value: 0, items: [] }); const lk = links.get(k); lk.value++; lk.items.push(it); }
+    });
+    const arr = [...nodes.values()];
+    const byCount = l => arr.filter(n => n.layer === l).sort((a, b) => b.items.length - a.items.length).map(n => n.label);
+    const ord = roles.map((ro, l) => ro === 'recipe' ? (st.recipe === 'class' ? CLS_ORDER.map(k => CLS_LABEL[k]) : byCount(l)) : ro === 'struct' ? BINS[st.struct].order : byCount(l));
+    arr.forEach(n => { n.order = ord[n.layer].indexOf(n.label); n.rows = n.items.length; n.papers = new Set(n.items.map(i => i.r.p)).size; });
+    return { rows, nodes: arr, links: [...links.values()], roles, hidden };
+  }
+  const recipeColor = (label, i) => st.recipe === 'class' ? CLS_COLOR[Object.keys(CLS_LABEL).find(k => CLS_LABEL[k] === label)] : PALETTE[i % PALETTE.length];
+  function topOf(items, layer, k) {
+    const c = new Map(); items.forEach(it => c.set(it.ids[layer], (c.get(it.ids[layer]) || 0) + 1));
+    return [...c].sort((a, b) => b[1] - a[1]).slice(0, k).map(([id, v]) => `${esc(lab(id))} <span class="mono">${v}</span>`).join(' · ');
+  }
+  function render() {
+    const g = build(), W = 1000, last = g.roles.length - 1;
+    const maxN = Math.max(...g.roles.map((_, l) => g.nodes.filter(n => n.layer === l).length));
+    const Hh = Math.max(380, Math.min(680, 34 * maxN + 110));
+    const sk = d3.sankey().nodeId(d => d.id).nodeWidth(14).nodePadding(12).nodeSort((a, b) => a.order - b.order).extent([[150, 34], [W - 175, Hh - 8]]);
+    const gr = sk({ nodes: g.nodes, links: g.links.map(l => Object.assign({}, l)) });
+    const color = n => n.role === 'recipe' ? recipeColor(n.label, n.order) : n.role === 'struct' ? '#8C96A3' : (FN_COLOR[n.label] || '#8fa3b8');
+    const path = d3.sankeyLinkHorizontal(), isNR = l => l.source.label === 'Not reported' || l.target.label === 'Not reported';
+    const linkCol = l => l.source.role === 'recipe' ? color(l.source) : color(l.target);
+    const heads = { recipe: `Recipe · ${st.recipe === 'class' ? 'augmentation class' : 'attachment route'}`, struct: `Structure · ${BINS[st.struct] ? BINS[st.struct].title : ''}`, fn: 'Function tested' };
+    let svg = `<g>${g.roles.map((ro, l) => { const n = gr.nodes.find(x => x.layer === l); return n ? `<text class="colhead" x="${l === 0 ? 8 : n.x0}" y="16">${esc(heads[ro])}</text>` : ''; }).join('')}</g>`;
+    svg += `<g id="lk">${gr.links.map((l, i) => `<path class="link" data-l="${i}" d="${path(l)}" stroke="${linkCol(l)}" stroke-opacity="${isNR(l) ? .12 : .34}" stroke-width="${Math.max(1.5, l.width)}"/>`).join('')}</g><g id="tr"></g>`;
+    svg += `<g id="hits">${gr.links.map((l, i) => `<path class="hit" data-l="${i}" d="${path(l)}" stroke-width="${Math.max(12, l.width)}"/>`).join('')}</g>`;
+    svg += `<g>${gr.nodes.map(n => { const h = Math.max(2, n.y1 - n.y0), hh = Math.max(16, h), cy = (n.y0 + n.y1) / 2; return `<g class="node${n.label === 'Not reported' ? ' nrd' : ''}" data-id="${esc(n.id)}" tabindex="0" role="button" aria-pressed="false" aria-label="${esc(n.label)}, ${n.rows} records">
+      <rect class="nh" x="${n.x0 - 4}" y="${cy - hh / 2}" width="${n.x1 - n.x0 + 8}" height="${hh}" fill="transparent"/>
+      <rect class="nr" x="${n.x0}" y="${n.y0}" width="${n.x1 - n.x0}" height="${h}" rx="3" fill="${color(n)}"/>
+      <text class="lbl" x="${n.role === 'recipe' ? n.x0 - 8 : n.x1 + 8}" y="${cy}" dy=".35em" text-anchor="${n.role === 'recipe' ? 'end' : 'start'}">${esc(n.label)} <tspan class="c">${n.rows}</tspan></text></g>`; }).join('')}</g>`;
+    const el = $('#sk', root); el.setAttribute('viewBox', `0 0 ${W} ${Hh}`); el.innerHTML = svg;
+    cur = { isNR, gr, roles: g.roles, color, path, linkCol, linkEls: [...el.querySelectorAll('.link')], nodeEls: [...el.querySelectorAll('.node')], tr: el.querySelector('#tr') };
+    $('#fsum', root).innerHTML = `Showing <b class="mono">${g.rows.length}</b> records from <b class="mono">${new Set(g.rows.map(r => r.p)).size}</b> papers. The number beside a block is its total records. Hover a band for its own count.${g.hidden ? ` ${g.hidden} with no reported ${esc(BINS[st.struct].title.toLowerCase())} are hidden.` : ''}`;
+    if (st.sel && !gr.nodes.some(n => n.id === st.sel)) st.sel = null;
+    el.querySelectorAll('.hit').forEach(p => {
+      const l = gr.links[+p.dataset.l], vis = cur.linkEls[+p.dataset.l]; let timer = null;
+      p.addEventListener('pointermove', e => {
+        showTip(`<b>${esc(l.source.label)}</b> → <b>${esc(l.target.label)}</b><br><span class="mono">${l.value}</span> records on this band<br><span class="muted">${l.source.rows} in “${esc(l.source.label)}” in total · ${new Set(l.items.map(i => i.r.p)).size} papers</span>`, e.clientX, e.clientY);
+        vis.classList.add('hot'); if (!timer) timer = setTimeout(() => H.log('flow-link', `${l.source.label}>${l.target.label}=${l.value}`), 700);
+      });
+      p.addEventListener('pointerleave', () => { hideTip(); vis.classList.remove('hot'); clearTimeout(timer); timer = null; });
+    });
+    cur.nodeEls.forEach(nd => {
+      const n = gr.nodes.find(x => x.id === nd.dataset.id); let timer = null;
+      const enter = e => {
+        st.hover = n.id; paint();
+        const bl = n.role === 'fn' ? n.targetLinks : n.sourceLinks, bs = bl.slice().sort((x, y) => y.value - x.value), to = (n.role === 'fn' ? 'Bands in: ' : 'Bands out: ') + bs.slice(0, 6).map(l => `${esc(n.role === 'fn' ? l.source.label : l.target.label)} <span class="mono">${l.value}</span>`).join(' · ') + (bs.length > 6 ? ` · +${bs.length - 6} more` : '');
+        if (e && e.clientX != null) showTip(`<b>${esc(n.label)}</b><br><span class="mono">${n.rows}</span> records in this block · <span class="muted">${n.papers} papers</span><br><span class="muted">${to}</span>`, e.clientX, e.clientY);
+        if (!timer) timer = setTimeout(() => H.log('flow-node-hover', n.label), 700);
+      };
+      const leave = () => { st.hover = null; paint(); hideTip(); clearTimeout(timer); timer = null; };
+      nd.addEventListener('pointermove', enter); nd.addEventListener('pointerleave', leave);
+      nd.addEventListener('focus', () => enter(null)); nd.addEventListener('blur', leave);
+      const act = () => { st.sel = st.sel === n.id ? null : n.id; H.log('flow-node', (st.sel ? '' : 'clear ') + n.label); side(); paint(); };
+      nd.addEventListener('click', act);
+      nd.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); act(); } });
+    });
+    side(); paint();
+  }
+  function paint() {
+    if (!cur) return;
+    const act = st.hover || st.sel, n = act && cur.gr.nodes.find(x => x.id === act);
+    const sub = new Map();
+    if (n) n.items.forEach(it => { for (let l = 0; l < it.ids.length - 1; l++) { const k = it.ids[l] + '>' + it.ids[l + 1]; sub.set(k, (sub.get(k) || 0) + 1); } });
+    cur.linkEls.forEach((p, i) => { const nr = cur.isNR(cur.gr.links[i]); p.classList.toggle('dim', !!n); p.setAttribute('stroke-opacity', n ? (nr ? .22 : .5) : (nr ? .12 : .34)); });
+    cur.tr.innerHTML = n ? cur.gr.links.map(l => { const c = sub.get(l.source.id + '>' + l.target.id); return c ? `<path class="trace" d="${cur.path(l)}" stroke="${cur.linkCol(l)}" stroke-opacity=".92" stroke-width="${Math.max(1.5, l.width * c / l.value)}"/>` : ''; }).join('') : '';
+    cur.nodeEls.forEach(nd => {
+      const id = nd.dataset.id, on = !n || n.items.some(it => it.ids.includes(id));
+      nd.classList.toggle('dim', !on); nd.setAttribute('aria-pressed', st.sel === id);
+      const r = nd.querySelector('.nr'); if (st.sel === id) { r.style.stroke = 'var(--text)'; r.setAttribute('stroke-width', 2); } else { r.removeAttribute('stroke-width'); r.style.stroke = ''; }
+    });
+  }
+  function dist(items, layer, colFn) {
+    const c = new Map(); items.forEach(it => c.set(it.ids[layer], (c.get(it.ids[layer]) || 0) + 1));
+    const tot = items.length, list = [...c].sort((a, b) => b[1] - a[1]).slice(0, 7);
+    return `<div class="dist">${list.map(([id, v]) => `<div class="r"><span>${esc(lab(id))}</span><span>${v}</span><span class="b"><i style="width:${v / tot * 100}%;background:${colFn(id)}"></i></span></div>`).join('')}</div>`;
+  }
+  function side() {
+    const aside = $('#fside', root), selNode = st.sel && cur.gr.nodes.find(n => n.id === st.sel);
+    if (!selNode) {
+      aside.innerHTML = `<h2>Trace a block</h2><p class="muted">Point at a block to follow its records across the diagram. Click to keep the trace on and see the breakdown here.</p>
+        <div class="sect"><h3>How to read it</h3><ul class="list"><li><b>Left:</b> how the particle was augmented.</li><li><b>Right:</b> what the material was tested for.</li><li><b>Middle (optional):</b> split by measured size, charge or polydispersity. Use “Split by structure” above.</li></ul></div>
+        <p class="muted" style="font-size:12.5px">Each record is one reported measurement. Most records do not report size, zeta or PDI, so a split puts them in “Not reported”.</p>`;
+      return;
+    }
+    const items = selNode.items, names = { recipe: 'Recipe', struct: 'Structure', fn: 'Function' };
+    const colFor = id => { const l = +id.split('|')[0], ro = cur.roles[l], n = cur.gr.nodes.find(x => x.id === id); return n ? cur.color(n) : '#8fa3b8'; };
+    aside.innerHTML = `<div><h2>${esc(selNode.label)}</h2><p class="muted"><span class="mono">${selNode.rows}</span> records from ${selNode.papers} papers</p></div>
+      ${cur.roles.map((ro, l) => l === selNode.layer ? '' : `<div class="sect"><h3>${names[ro]}</h3>${dist(items, l, colFor)}</div>`).join('')}
+      <div class="sect"><h3>Top papers</h3><div class="papers">${paperHTML(topPapers(items.map(i => i.r), 4), H)}</div></div>
+      <button class="btn small" id="clear" type="button">Clear selection</button>`;
+    $('#clear', aside).addEventListener('click', () => { st.sel = null; H.log('flow-clear', ''); side(); paint(); });
+    aside.querySelectorAll('a[data-doi]').forEach(a => a.addEventListener('click', () => H.log('paper-link', a.dataset.doi)));
+  }
+  function seg(id, key, after) { $('#' + id, root).addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; st[key] = b.dataset.v; $('#' + id, root).querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', x === b)); H.log('flow-' + key, b.dataset.v); if (after) after(); st.sel = null; render(); }); }
+  seg('s-recipe', 'recipe');
+  seg('s-struct', 'struct', () => { $('#c-nr', root).disabled = st.struct === 'none'; if (st.struct === 'none') { st.hideNR = false; $('#c-nr', root).checked = false; } });
+  $('#c-nr', root).addEventListener('change', e => { st.hideNR = e.target.checked; H.log('flow-hide-nr', st.hideNR); render(); });
+  $('#c-char', root).addEventListener('change', e => { st.showChar = e.target.checked; H.log('flow-char', st.showChar); render(); });
+  $('#c-ctl', root).addEventListener('change', e => { st.controls = e.target.checked; H.log('flow-controls', st.controls); render(); });
+  const esc2 = e => { if (e.key === 'Escape' && st.sel) { st.sel = null; side(); paint(); } };
+  document.addEventListener('keydown', esc2);
+  render();
+  return { destroy() { document.removeEventListener('keydown', esc2); hideTip(); } };
+}
+
+
+const H = { log() {} };
+const roots = {}, insts = {};
+let loading = null;
+function ensure() {
+  if (DATA) return Promise.resolve();
+  if (loading) return loading;
+  const lib = src => new Promise((ok, no) => { const s = document.createElement('script'); s.src = src; s.onload = ok; s.onerror = () => no(new Error('Could not load ' + src)); document.head.appendChild(s); });
+  loading = (window.d3 ? Promise.resolve() : lib('https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js'))
+    .then(() => (d3.sankey ? 0 : lib('https://cdn.jsdelivr.net/npm/d3-sankey@0.12.3/dist/d3-sankey.min.js')))
+    .then(() => fetch('dock.json')).then(r => r.json()).then(d => { DATA = d; indexData(); })
+    .catch(e => { loading = null; throw e; });
+  return loading;
+}
+window.XL = {
+  show(kind, pane) {
+    pane.innerHTML = '<div class="xl"><p class="muted">Loading…</p></div>';
+    return ensure().then(() => {
+      if (!roots[kind]) { roots[kind] = document.createElement('div'); roots[kind].className = 'xl'; insts[kind] = (kind === 'dock' ? mountDock : mountFlow)(roots[kind], H); }
+      pane.innerHTML = ''; pane.appendChild(roots[kind]);
+    }).catch(e => { pane.innerHTML = '<div class="note">Could not load this view: ' + esc(e.message) + '</div>'; });
+  }
+};
+
+})();
+</script>
+<script>
+(function(){
+var DATA=[], view=[], sortKey="paper_id", sortDir=1;
+var $=function(s){return document.querySelector(s)};
+function esc(s){return String(s==null?"":s).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]})}
+function norm(r){ if(r.function_type==='antibacterial')r.function_type='antimicrobial'; // merge labels so Explorer matches Dock and Flow
+  // put MIC on ug/mL
+  var v=r.value,u=r.unit;
+  if(/^MIC_/.test(r.metric_name)&&u==="mg/mL"){v=v*1000;u="ug/mL";}
+  r.v=v;r.u=u;return r;
+}
+function fmt(x){if(x==null)return "";var a=Math.abs(x);return a>=100?x.toFixed(0):a>=10?x.toFixed(1):a>=1?x.toFixed(2):x.toPrecision(2);}
+var tab="explore";
+function APPS(){var o={};DATA.forEach(function(r){(r.application_area||"").split(";").forEach(function(a){if(a)o[a]=1})});return Object.keys(o).sort()}
+
+fetch("data.json").then(function(r){return r.json()}).then(function(d){
+  DATA=d.map(norm); init();
+}).catch(function(e){$("#pane").innerHTML='<div class="note">Could not load data.json: '+esc(e.message)+'</div>';});
+
+function uniq(k){var s={};DATA.forEach(function(r){if(r[k])s[r[k]]=(s[k]||0)+1});return Object.keys(s).sort()}
+function fillSel(id,vals,label){$(id).innerHTML='<option value="">'+label+'</option>'+vals.map(function(v){return '<option>'+esc(v)+'</option>'}).join("")}
+
+function init(){
+  fillSel("#fFn",uniq("function_type"),"All functions");
+  fillSel("#fApp",APPS(),"All applications");
+  fillSel("#fAug",uniq("aug_class"),"All classes");
+  fillSel("#fMet",uniq("metric_name"),"All metrics");
+  ["#q","#fFn","#fApp","#fAug","#fMet","#fConf"].forEach(function(s){$(s).addEventListener("input",function(){apply();render()})});
+  $("#reset").onclick=function(){$("#q").value="";$("#fFn").value="";$("#fAug").value="";$("#fApp").value="";$("#fMet").value="";$("#fConf").value=0;apply();render()};
+  document.querySelectorAll("#tabs button").forEach(function(b){b.onclick=function(){
+    tab=b.dataset.t;document.querySelectorAll("#tabs button").forEach(function(x){x.setAttribute("aria-selected",x===b)});
+    var nf=tab==="predict"||tab==="papers"||tab==="map"||tab==="dock"||tab==="flow"||tab==="abbr";$("#filters").classList.toggle("hide",nf);document.querySelector("main").classList.toggle("wide",nf);location.hash=tab;render()}});
+  var h=location.hash.slice(1);if(["explore","charts","map","dock","flow","papers","predict","abbr"].indexOf(h)>-1){var b=document.querySelector('[data-t="'+h+'"]');b.click();return;}
+  apply();render();
+}
+function apply(){
+  var q=$("#q").value.toLowerCase(),fn=$("#fFn").value,ag=$("#fAug").value,me=$("#fMet").value,cf=+$("#fConf").value,ap=$("#fApp").value;
+  $("#confv").textContent=cf.toFixed(2);
+  view=DATA.filter(function(r){
+    if(fn&&r.function_type!==fn)return false; if(ag&&r.aug_class!==ag)return false; if(me&&r.metric_name!==me)return false;
+    if(ap&&(";"+(r.application_area||"")+";").indexOf(";"+ap+";")<0)return false;
+    if((r.extraction_confidence||0)<cf)return false;
+    if(q){var t=(r.aug_species+" "+r.metric_name+" "+r.test_condition+" "+r.paper_id+" "+r.paper_label+" "+r.legacy_paper_id+" "+r.lignin_source+" "+r.title+" "+r.intended_application).toLowerCase();if(t.indexOf(q)<0)return false;}
+    return true;});
+  $("#count").textContent=view.length+" of "+DATA.length+" measurements";
+}
+function tiles(rows){
+  var p={};rows.forEach(function(r){p[r.paper_id]=1});
+  var sp={};rows.forEach(function(r){if(r.aug_species)sp[r.aug_species]=1});
+  var conf=rows.length?rows.reduce(function(a,r){return a+(r.extraction_confidence||0)},0)/rows.length:0;
+  return '<div class="tiles"><div class="tile"><b>'+rows.length+'</b><span>measurements</span></div><div class="tile"><b>'+Object.keys(p).length+'</b><span>papers</span></div><div class="tile"><b>'+Object.keys(sp).length+'</b><span>augmentation species</span></div><div class="tile"><b>'+conf.toFixed(2)+'</b><span>mean confidence</span></div></div>';
+}
+function render(){
+  if(tab==="explore"){apply();renderExplore()}else if(tab==="charts"){apply();renderCharts()}else if(tab==="map")renderMap();else if(tab==="dock"||tab==="flow")XL.show(tab,$("#pane"));else if(tab==="abbr")renderAbbr();else if(tab==="papers")renderPapers();else renderPredict();
+}
+var cols=[["paper_id","Paper"],["aug_class","Class"],["aug_species","Augmentation"],["function_type","Function"],["metric_name","Metric"],["v","Value"],["u","Unit"],["lnp_dls_nm","DLS nm"],["zeta_mv","Zeta mV"],["extraction_confidence","Conf."],["source_page","Page"]];
+function renderExplore(){
+  var rows=view.slice().sort(function(a,b){var x=a[sortKey],y=b[sortKey];if(x==null)return 1;if(y==null)return -1;return (x>y?1:x<y?-1:0)*sortDir});
+  var h=tiles(view)+'<div class="scroll"><table><thead><tr>'+cols.map(function(c){return '<th tabindex="0" data-k="'+c[0]+'">'+c[1]+(sortKey===c[0]?(sortDir>0?" ▲":" ▼"):"")+'</th>'}).join("")+'</tr></thead><tbody>';
+  rows.slice(0,400).forEach(function(r,i){
+    h+='<tr data-i="'+DATA.indexOf(r)+'" title="'+esc(r.test_condition)+'"><td>'+esc(r.paper_label)+' <span class="muted small">'+esc(r.paper_id)+'</span></td><td>'+esc(r.aug_class)+'</td><td>'+esc(r.aug_species)+'</td><td>'+esc(r.function_type)+'</td><td>'+esc(r.metric_name)+'</td><td class="num">'+fmt(r.v)+'</td><td>'+esc(r.u)+'</td><td class="num">'+fmt(r.lnp_dls_nm)+'</td><td class="num">'+fmt(r.zeta_mv)+'</td><td><span class="pill'+((r.extraction_confidence||0)<0.6?" lo":"")+'">'+(r.extraction_confidence!=null?r.extraction_confidence.toFixed(2):"")+'</span></td><td class="num">'+esc(r.source_page)+'</td></tr>';});
+  h+='</tbody></table></div>'+(rows.length>400?'<div class="small muted">Showing first 400 rows. Narrow the filters to see the rest.</div>':'')+'<div class="small muted">Hover a row for its test condition. Click a row for details. MIC values are shown in ug/mL.</div><div id="detail"></div>';
+  $("#pane").innerHTML=h;
+  $("#pane").querySelectorAll("th").forEach(function(t){var f=function(){var k=t.dataset.k;if(sortKey===k)sortDir*=-1;else{sortKey=k;sortDir=1}renderExplore()};t.onclick=f;t.onkeydown=function(e){if(e.key==="Enter")f()}});
+  $("#pane").querySelectorAll("tbody tr").forEach(function(tr){tr.onclick=function(){var r=DATA[+tr.dataset.i];
+    $("#detail").innerHTML='<div class="card"><h2>'+esc(r.aug_species||"Unaugmented LNP")+' · '+esc(r.metric_name)+'</h2><p><b>'+fmt(r.v)+' '+esc(r.u)+'</b> ('+esc(r.function_type)+')</p><p class="small">'+esc(r.test_condition)+'</p><p class="small muted">Lignin: '+esc(r.lignin_source||"not recorded")+' · LNP method: '+esc(r.lnp_method||"")+' · Route: '+esc(r.aug_route||"")+'</p><p class="small"><b>Intended application:</b> '+esc(r.intended_application||"")+' <span class="muted">('+esc((r.application_area||"").replace(/;/g,", "))+')</span></p><p class="small">'+esc(r.title||"")+' · <a target="_blank" rel="noopener" href="https://doi.org/'+esc(r.doi)+'">'+esc(r.doi)+'</a> · page '+esc(r.source_page)+'</p></div>';
+    $("#detail").scrollIntoView({block:"nearest"})}});
+}
+function bars(title,counts){
+  var ks=Object.keys(counts).sort(function(a,b){return counts[b]-counts[a]}),mx=counts[ks[0]]||1,H=ks.length*24+8,
+  s='<div class="card"><h2>'+title+'</h2><svg viewBox="0 0 520 '+H+'" width="100%" role="img" aria-label="'+title+'">';
+  ks.forEach(function(k,i){var w=counts[k]/mx*300;s+='<text x="0" y="'+(i*24+16)+'">'+esc(k)+'</text><rect x="150" y="'+(i*24+5)+'" width="'+w+'" height="14" rx="3" fill="var(--accent)"/><text x="'+(156+w)+'" y="'+(i*24+16)+'">'+counts[k]+'</text>'});
+  return s+'</svg></div>';
+}
+function count(rows,k){var c={};rows.forEach(function(r){var v=r[k]||"none";c[v]=(c[v]||0)+1});return c}
+function renderCharts(){
+  var h=tiles(view)+'<div class="row">'+bars("Measurements by function",count(view,"function_type"))+bars("Measurements by augmentation class",count(view,"aug_class"))+'</div>';
+  // scatter for numeric metric
+  var mets={};DATA.forEach(function(r){if(r.v!=null&&r.u!=="unspecified")mets[r.metric_name+"|"+r.u]=(mets[r.metric_name+"|"+r.u]||0)+1});
+  var opts=Object.keys(mets).filter(function(k){return mets[k]>=8}).sort();
+  h+='<div class="card"><h2>Value by augmentation class</h2><div class="row"><div><label for="cm">Metric</label><select id="cm">'+opts.map(function(o){return '<option value="'+esc(o)+'">'+esc(o.replace("|"," ("))+')</option>'}).join("")+'</select></div><div><label for="cs">Log scale</label><select id="cs"><option value="1">Log</option><option value="0">Linear</option></select></div></div><div id="sc"></div></div>';
+  $("#pane").innerHTML=h;
+  var draw=function(){
+    var sel=$("#cm").value.split("|"),log=$("#cs").value==="1",rows=DATA.filter(function(r){return r.metric_name===sel[0]&&r.u===sel[1]&&r.v>0});
+    var cls=Object.keys(count(rows,"aug_class")).sort(),vals=rows.map(function(r){return r.v}),lo=Math.min.apply(0,vals),hi=Math.max.apply(0,vals);
+    var f=function(v){return log?Math.log10(v):v},a=f(lo),b=f(hi);if(a===b){a-=1;b+=1}
+    var W=520,H=cls.length*34+40,s='<svg viewBox="0 0 '+W+' '+H+'" width="100%" role="img" aria-label="Values of '+esc(sel[0])+' by augmentation class">';
+    cls.forEach(function(c,i){var y=i*34+22;s+='<line x1="110" x2="'+(W-10)+'" y1="'+y+'" y2="'+y+'" stroke="var(--line)"/><text x="0" y="'+(y+4)+'">'+esc(c)+'</text>';
+      rows.filter(function(r){return (r.aug_class||"none")===c}).forEach(function(r,j){var x=110+(f(r.v)-a)/(b-a)*(W-130);s+='<circle cx="'+x+'" cy="'+(y+((j%5)-2)*3)+'" r="5" fill="var(--accent)" fill-opacity=".6"><title>'+esc(r.paper_id+": "+fmt(r.v)+" "+r.u+" "+(r.aug_species||""))+'</title></circle>'})});
+    s+='<text x="110" y="'+(H-6)+'">'+fmt(lo)+'</text><text x="'+(W-10)+'" y="'+(H-6)+'" text-anchor="end">'+fmt(hi)+' '+esc(sel[1])+'</text></svg><div class="small muted">'+rows.length+' points. Hover a point for its paper. Spread within a class often reflects different test strains and methods, not the augmentation.</div>';
+    $("#sc").innerHTML=s};
+  if(opts.length){var pref=opts.indexOf("DPPH_IC50|ug/mL");if(pref>-1)$("#cm").value="DPPH_IC50|ug/mL";$("#cm").onchange=draw;$("#cs").onchange=draw;draw()}
+}
+
+var DESC=[["lnp_dls_nm","LNP size, DLS (nm)"],["lnp_tem_nm","LNP size, TEM (nm)"],["zeta_mv","Zeta potential (mV)"],["pdi","PDI"],["aug_loading_wt_pct","Augmentation loading (wt%)"],["aug_particle_nm","Augmentation particle (nm)"]];
+var CLSCOL={none:"#9AA3AF",metal:"#2F5BB7",metal_oxide:"#8FA9D6",organic:"#D50032",biomolecule:"#6FA3C0",polymer:"#F08CA2",inorganic:"#5E6B7A"};
+function ranks(a){var idx=a.map(function(v,i){return [v,i]}).sort(function(x,y){return x[0]-y[0]}),r=new Array(a.length),i=0;while(i<idx.length){var j=i;while(j+1<idx.length&&idx[j+1][0]===idx[i][0])j++;var m=(i+j)/2+1;for(var k=i;k<=j;k++)r[idx[k][1]]=m;i=j+1}return r}
+function spearman(x,y){var rx=ranks(x),ry=ranks(y),n=x.length,mx=0,my=0,i;for(i=0;i<n;i++){mx+=rx[i];my+=ry[i]}mx/=n;my/=n;var sxy=0,sx=0,sy=0;for(i=0;i<n;i++){sxy+=(rx[i]-mx)*(ry[i]-my);sx+=(rx[i]-mx)*(rx[i]-mx);sy+=(ry[i]-my)*(ry[i]-my)}return sx&&sy?sxy/Math.sqrt(sx*sy):null}
+var mapSel={x:"lnp_dls_nm",y:null,lx:true,ly:true};
+function mapPairs(metKey,dk){var m=metKey.split("|");return DATA.filter(function(r){return r.metric_name===m[0]&&r.u===m[1]&&r.v>0&&r[dk]!=null})}
+function renderMap(){
+  var mets={};DATA.forEach(function(r){if(r.v!=null&&r.u&&r.u!=="unspecified"&&r.u!=="1=active")mets[r.metric_name+"|"+r.u]=1});
+  var grid=[];Object.keys(mets).sort().forEach(function(k){var row={k:k,c:[]},any=false;DESC.forEach(function(d){var P=mapPairs(k,d[0]),np={};P.forEach(function(r){np[r.paper_id]=1});var rho=null;if(P.length>=8&&Object.keys(np).length>=3)rho=spearman(P.map(function(r){return r[d[0]]}),P.map(function(r){return r.v}));row.c.push({d:d[0],n:P.length,np:Object.keys(np).length,rho:rho});if(rho!=null)any=true});if(any)grid.push(row)});
+  if(!mapSel.y&&grid.length)mapSel.y=grid[0].k;
+  var h='<div class="card"><h2>Where structure and function connect</h2><p class="small muted">Each cell is the Spearman rank correlation between a structural descriptor and a measured metric, shown only where at least 8 rows and 3 papers have both. Teal means the metric rises with the descriptor, brown means it falls. Click a cell to plot it below. Different papers use different strains, assays and lignins, so a strong cell can reflect one paper rather than the structure.</p><div class="scroll"><table><thead><tr><th>Metric</th>'+DESC.map(function(d){return '<th style="cursor:default">'+d[1]+'</th>'}).join("")+'</tr></thead><tbody>';
+  grid.forEach(function(row){h+='<tr><td>'+esc(row.k.replace("|"," ("))+')</td>';row.c.forEach(function(c){if(c.rho==null){h+='<td class="muted small">n='+c.n+'</td>';return}var a=Math.min(1,Math.abs(c.rho)),col=c.rho>0?"15,107,100":"164,86,26";h+='<td tabindex="0" role="button" data-k="'+esc(row.k)+'" data-d="'+c.d+'" style="cursor:pointer;background:rgba('+col+','+(0.12+a*0.6)+')" title="n='+c.n+' rows, '+c.np+' papers"><b>'+c.rho.toFixed(2)+'</b> <span class="small muted">n='+c.n+'</span></td>'});h+='</tr>'});
+  h+='</tbody></table></div></div><div class="card"><h2>Plot</h2><div class="row"><div><label for="mx">Structure (x)</label><select id="mx">'+DESC.map(function(d){return '<option value="'+d[0]+'">'+d[1]+'</option>'}).join("")+'</select></div><div><label for="my">Function (y)</label><select id="my">'+Object.keys(mets).sort().filter(function(k){return DESC.some(function(d){return mapPairs(k,d[0]).length>=3})}).map(function(k){return '<option value="'+esc(k)+'">'+esc(k.replace("|"," ("))+')</option>'}).join("")+'</select></div><div><label for="mlx">x scale</label><select id="mlx"><option value="1">Log</option><option value="0">Linear</option></select></div><div><label for="mly">y scale</label><select id="mly"><option value="1">Log</option><option value="0">Linear</option></select></div></div><div id="mplot"></div><div id="mdet"></div></div>';
+  $("#pane").innerHTML=h;
+  $("#mx").value=mapSel.x;$("#my").value=mapSel.y;$("#mlx").value=mapSel.lx?"1":"0";$("#mly").value=mapSel.ly?"1":"0";
+  var upd=function(){mapSel.x=$("#mx").value;mapSel.y=$("#my").value;mapSel.lx=$("#mlx").value==="1";mapSel.ly=$("#mly").value==="1";drawMap()};
+  ["#mx","#my","#mlx","#mly"].forEach(function(s){$(s).onchange=upd});
+  $("#pane").querySelectorAll("td[data-k]").forEach(function(td){var go=function(){mapSel.y=td.dataset.k;mapSel.x=td.dataset.d;mapSel.lx=td.dataset.d!=="zeta_mv"&&td.dataset.d!=="pdi";$("#mx").value=mapSel.x;$("#my").value=mapSel.y;$("#mlx").value=mapSel.lx?"1":"0";drawMap();$("#mplot").scrollIntoView({block:"nearest"})};td.onclick=go;td.onkeydown=function(e){if(e.key==="Enter")go()}});
+  drawMap();
+}
+function drawMap(){
+  var P=mapPairs(mapSel.y,mapSel.x),xs=P.map(function(r){return r[mapSel.x]}),lx=mapSel.lx&&xs.every(function(v){return v>0});
+  if(P.length<2){$("#mplot").innerHTML='<div class="note">Only '+P.length+' row(s) have both values. Pick another pair.</div>';return}
+  var fx=function(v){return lx?Math.log10(v):v},fy=function(v){return mapSel.ly?Math.log10(v):v};
+  var x0=Math.min.apply(0,xs),x1=Math.max.apply(0,xs),ys=P.map(function(r){return r.v}),y0=Math.min.apply(0,ys),y1=Math.max.apply(0,ys);
+  var a=fx(x0),b=fx(x1),c=fy(y0),d=fy(y1);if(a===b){a-=1;b+=1}if(c===d){c-=1;d+=1}
+  var W=640,H=360,L=56,B=40,T=10,R=14,np={},cls={};P.forEach(function(r){np[r.paper_id]=1;cls[r.aug_class||"none"]=1});
+  var rho=P.length>=3?spearman(xs,ys):null,u=P[0].u;
+  var s='<svg viewBox="0 0 '+W+' '+H+'" width="100%" role="img" aria-label="Scatter of '+esc(mapSel.y)+' against '+esc(mapSel.x)+'"><rect x="'+L+'" y="'+T+'" width="'+(W-L-R)+'" height="'+(H-T-B)+'" fill="none" stroke="var(--line)"/>';
+  for(var i=0;i<=4;i++){var gx=L+i/4*(W-L-R),gy=T+i/4*(H-T-B),vx=a+(b-a)*i/4,vy=d-(d-c)*i/4;s+='<line x1="'+gx+'" x2="'+gx+'" y1="'+T+'" y2="'+(H-B)+'" stroke="var(--line)" stroke-opacity=".5"/><line x1="'+L+'" x2="'+(W-R)+'" y1="'+gy+'" y2="'+gy+'" stroke="var(--line)" stroke-opacity=".5"/><text x="'+gx+'" y="'+(H-B+14)+'" text-anchor="middle">'+fmt(lx?Math.pow(10,vx):vx)+'</text><text x="'+(L-6)+'" y="'+(gy+4)+'" text-anchor="end">'+fmt(mapSel.ly?Math.pow(10,vy):vy)+'</text>'}
+  s+='<text x="'+((L+W-R)/2)+'" y="'+(H-6)+'" text-anchor="middle">'+esc((DESC.filter(function(z){return z[0]===mapSel.x})[0]||[])[1])+'</text><text transform="translate(12,'+((T+H-B)/2)+') rotate(-90)" text-anchor="middle">'+esc(mapSel.y.split("|")[0])+' ('+esc(u)+')</text>';
+  P.forEach(function(r){var cx=L+(fx(r[mapSel.x])-a)/(b-a)*(W-L-R),cy=H-B-(fy(r.v)-c)/(d-c)*(H-T-B),k=r.aug_class||"none";s+='<circle class="pt" data-i="'+DATA.indexOf(r)+'" cx="'+cx+'" cy="'+cy+'" r="6" fill="'+CLSCOL[k]+'" fill-opacity=".72" stroke="var(--panel)" tabindex="0"><title>'+esc(r.paper_id+" · "+(r.aug_species||"unaugmented")+" · "+fmt(r.v)+" "+r.u)+'</title></circle>'});
+  s+='</svg><div class="small" style="display:flex;gap:12px;flex-wrap:wrap">'+Object.keys(cls).map(function(k){return '<span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:'+CLSCOL[k]+'"></span> '+k+'</span>'}).join("")+'</div><p class="small muted">'+P.length+' points from '+Object.keys(np).length+' papers.'+(rho!=null?' Spearman ρ = '+rho.toFixed(2)+'.':'')+' Click a point for its source.</p>';
+  $("#mplot").innerHTML=s;
+  $("#mplot").querySelectorAll(".pt").forEach(function(el){var f=function(){var r=DATA[+el.dataset.i];$("#mdet").innerHTML='<div class="card"><p><b>'+esc(r.aug_species||"Unaugmented LNP")+'</b> · '+fmt(r.v)+' '+esc(r.u)+' · '+esc(r.metric_name)+'</p><p class="small">'+esc(r.test_condition)+'</p><p class="small muted">'+esc(r.title||r.paper_id)+' · <a target="_blank" rel="noopener" href="https://doi.org/'+esc(r.doi)+'">'+esc(r.doi)+'</a> · page '+esc(r.source_page)+'</p></div>'};el.onclick=f;el.onkeydown=function(e){if(e.key==="Enter")f()}});
+}
+var ABBR=[["Materials and samples", [["LNP", "Lignin nanoparticle."], ["aLNP", "Augmented lignin nanoparticle: an LNP carrying an added species (metal, metal oxide, inorganic, organic, polymer or biomolecule)."], ["aLNP", "Name of this Explorer and its database of augmented LNPs."], ["Bare LNP", "Control particle with no augmentation (augmentation class “none”)."], ["NP", "Nanoparticle (AgNP = silver nanoparticle, Au NP = gold nanoparticle)."], ["EHL", "Enzymatic hydrolysis lignin."], ["CEL", "Cellulolytic enzyme lignin."], ["DES", "Deep eutectic solvent."], ["GVL", "γ-Valerolactone, a solvent used for lignin extraction."], ["PVA", "Poly(vinyl alcohol)."], ["PLA", "Polylactic acid."], ["PDMS", "Polydimethylsiloxane."], ["PDDA", "Poly(diallyldimethylammonium chloride)."], ["PEGDGE", "Poly(ethylene glycol) diglycidyl ether, a crosslinker."], ["CNC", "Cellulose nanocrystals."], ["COS", "Chitooligosaccharide."], ["DD", "Degree of deacetylation (chitosan)."], ["SPIO", "Superparamagnetic iron oxide (Fe₃O₄)."], ["UF", "Urea–formaldehyde (resin)."], ["ConA", "Concanavalin A."], ["HRP", "Horseradish peroxidase."], ["GOx", "Glucose oxidase."], ["EB", "Emamectin benzoate (pesticide)."], ["GA", "Gambogic acid in this database (not gallic acid)."]]], ["Particle characterization", [["DLS", "Dynamic light scattering; gives hydrodynamic size."], ["PDI", "Polydispersity index; lower means a narrower size distribution."], ["ζ, zeta", "Zeta potential in mV, a measure of surface charge."], ["TEM / SEM / AFM", "Transmission electron, scanning electron and atomic force microscopy."], ["EDX", "Energy-dispersive X-ray spectroscopy (elemental composition)."], ["Mw / Mn", "Weight-average and number-average molecular weight."], ["Da / kDa", "Dalton / kilodalton."], ["wt%", "Weight percent."], ["NIR", "Near-infrared light."], ["UVA / UVB / UVC", "Ultraviolet bands: 315–400, 280–315 and 100–280 nm."]]], ["Activity and performance metrics", [["MIC", "Minimum inhibitory concentration (lower is better)."], ["MBC", "Minimum bactericidal concentration (lower is better)."], ["ZOI", "Zone of inhibition, in mm."], ["CFU", "Colony-forming units."], ["IC50", "Concentration giving 50% inhibition (lower is better)."], ["EC50", "Concentration giving 50% of the maximum effect (lower is better)."], ["LC50", "Concentration lethal to 50% of the test organisms."], ["LOD", "Limit of detection (lower is better)."], ["DPPH", "2,2-Diphenyl-1-picrylhydrazyl radical scavenging assay."], ["ABTS", "2,2′-Azino-bis(3-ethylbenzothiazoline-6-sulfonic acid) radical scavenging assay."], ["TEAC", "Trolox equivalent antioxidant capacity."], ["TPC", "Total phenolic content."], ["GAE", "Gallic acid equivalents."], ["SPF", "Sun protection factor."], ["UPF", "Ultraviolet protection factor (fabrics)."], ["UVA-PF", "UVA protection factor."], ["UTS", "Ultimate tensile strength."], ["LOI", "Limiting oxygen index (flame retardancy)."], ["EE", "Encapsulation efficiency."], ["DLC / DLE", "Drug loading content / drug loading efficiency."], ["LE / LC", "Loading efficiency / loading capacity."], ["Km / Vmax / kcat", "Michaelis constant, maximum reaction rate, turnover number (enzyme-like activity)."], ["SGF", "Simulated gastric fluid."], ["PTT", "Photothermal therapy."], ["HER", "Hydrogen evolution reaction."], ["4-NP / 4-AP", "4-Nitrophenol / 4-aminophenol (catalytic reduction test)."], ["MB / MO / RhB", "Methylene blue / methyl orange / rhodamine B (dyes used in adsorption and degradation tests)."], ["TMB", "3,3′,5,5′-Tetramethylbenzidine (colour reaction in enzyme-mimic assays)."]]], ["Database fields", [["aLNP-####", "Permanent paper ID. Assigned once, never reused or renumbered; the key used in the data files and ML splits."], ["Label", "Reading label: first author, year, and a/b/c for papers sharing both, e.g. Bermeo 2022a. Not a key."], ["DOI", "Digital object identifier of the source paper."], ["Conf.", "Extraction confidence, 0 to 1, for a record. Records below 0.6 are flagged low."], ["n", "Number of records behind a value; a median with n below 3 is not compared."], ["rec.", "Records."], ["Class", "Augmentation class: metal, metal oxide, inorganic, organic, polymer, biomolecule, or none (bare LNP)."], ["Route", "How the augmentation was attached: encapsulation, adsorption, physical blend, in-situ reduction, co-precipitation, grafting, other."]]]];
+function renderAbbr(){var q='';function draw(){var s='<div class="card"><h2>Abbreviations</h2><p class="small muted">Terms used in this Explorer and in the metric names. Metric names in the data are kept as extracted from each paper.</p><input id="abq" type="search" aria-label="Filter abbreviations" placeholder="Filter, e.g. MIC" style="margin:6px 0 10px;width:min(320px,100%);padding:6px 8px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink)" value="'+esc(q)+'">';ABBR.forEach(function(g){var rows=g[1].filter(function(r){return !q||(r[0]+' '+r[1]).toLowerCase().indexOf(q)>-1});if(!rows.length)return;s+='<h3 style="font-size:14px;margin:14px 0 4px;color:var(--navy)">'+esc(g[0])+'</h3><table><tbody>'+rows.map(function(r){return '<tr><td style="white-space:nowrap;font-weight:600;width:170px">'+esc(r[0])+'</td><td>'+esc(r[1])+'</td></tr>'}).join('')+'</tbody></table>'});s+='</div>';$('#pane').innerHTML=s;var el=$('#abq');el.addEventListener('input',function(){q=el.value.toLowerCase();var pos=el.selectionStart;draw();var e2=$('#abq');e2.focus();e2.setSelectionRange(pos,pos)})}draw()}
+function renderPapers(){
+  var p={};DATA.forEach(function(r){var o=p[r.paper_id]||(p[r.paper_id]={id:r.paper_id,label:r.paper_label,legacy:r.legacy_paper_id,doi:r.doi,title:r.title,app:r.intended_application,area:r.application_area,n:0,aug:{},fn:{}});o.n++;if(r.aug_species&&r.aug_species!=="none")o.aug[r.aug_species]=1;o.fn[r.function_type]=1});
+  var L=Object.keys(p).sort().map(function(k){return p[k]});
+  $("#pane").innerHTML='<div class="tiles"><div class="tile"><b>'+L.length+'</b><span>papers</span></div></div><div class="scroll"><table><thead><tr><th>Paper</th><th>Title</th><th>Intended application</th><th>Rows</th><th>Functions</th></tr></thead><tbody>'+L.map(function(o){return '<tr><td><b>'+esc(o.label)+'</b><br><span class="muted small">'+esc(o.id)+'</span></td><td>'+esc(o.title)+'<br><a class="small" target="_blank" rel="noopener" href="https://doi.org/'+esc(o.doi)+'">'+esc(o.doi)+'</a></td><td class="small">'+esc(o.app)+'<br><span class="muted">'+esc((o.area||"").replace(/;/g,", "))+'</span></td><td class="num">'+o.n+'</td><td class="small">'+Object.keys(o.fn).join(", ")+'</td></tr>'}).join("")+'</tbody></table></div>';
+}
+function renderPredict(){
+  var mets={};DATA.forEach(function(r){if(r.v!=null&&r.u&&r.u!=="unspecified"&&r.u!=="1=active")mets[r.metric_name+"|"+r.u]=(mets[r.metric_name+"|"+r.u]||0)+1});
+  var opts=Object.keys(mets).filter(function(k){return mets[k]>=10&&/IC50|MIC_|EC50/.test(k)}).sort();
+  $("#pane").innerHTML='<div class="card"><h2>Estimate from similar published rows</h2><div class="note">This is a nearest-neighbour lookup, not a trained model. In cross-validation by paper, the random forest and neural network did not beat simply using the average of the metric. Treat the answer as a pointer to comparable published values, with wide error.</div>'+
+  '<div class="row"><div><label for="pm">Metric</label><select id="pm">'+opts.map(function(o){return '<option value="'+esc(o)+'">'+esc(o.replace("|"," ("))+')</option>'}).join("")+'</select></div><div><label for="pc">Augmentation class</label><select id="pc"><option value="">any</option>'+uniq("aug_class").map(function(c){return '<option>'+c+'</option>'}).join("")+'</select></div><div><label for="ps">Species contains</label><input id="ps" placeholder="e.g. Ag, curcumin"></div><div><label for="pd">LNP size, nm (optional)</label><input id="pd" type="number" min="10" step="10" placeholder="150"></div></div><p><button class="go" id="pgo" type="button">Find comparable rows</button></p><div id="pout"></div></div>';
+  var run=function(){
+    var sel=$("#pm").value.split("|"),cl=$("#pc").value,sp=$("#ps").value.toLowerCase(),sz=parseFloat($("#pd").value);
+    var pool=DATA.filter(function(r){return r.metric_name===sel[0]&&r.u===sel[1]&&r.v>0});
+    var all=pool.map(function(r){return Math.log10(r.v)}),mean=all.reduce(function(a,b){return a+b},0)/all.length;
+    var sc=pool.map(function(r){var s=0;if(cl&&r.aug_class===cl)s+=2;if(sp&&(r.aug_species||"").toLowerCase().indexOf(sp)>-1)s+=3;if(!isNaN(sz)&&r.lnp_dls_nm)s+=1/(1+Math.abs(Math.log(r.lnp_dls_nm/sz))*3);return {r:r,s:s}}).sort(function(a,b){return b.s-a.s});
+    var top=sc.filter(function(x){return x.s>0}).slice(0,5);if(!top.length)top=sc.slice(0,5);
+    var lv=top.map(function(x){return Math.log10(x.r.v)}),m=lv.reduce(function(a,b){return a+b},0)/lv.length;
+    var sd=Math.sqrt(lv.reduce(function(a,b){return a+(b-m)*(b-m)},0)/lv.length);
+    $("#pout").innerHTML='<p>Comparable-row estimate: <span class="big">'+fmt(Math.pow(10,m))+'</span> '+esc(sel[1])+' <span class="muted small">(about ×/÷ '+Math.pow(10,sd).toFixed(1)+')</span></p><p class="small muted">All-row geometric mean for this metric: '+fmt(Math.pow(10,mean))+' '+esc(sel[1])+' from '+pool.length+' rows in '+Object.keys(pool.reduce(function(o,r){o[r.paper_id]=1;return o},{})).length+' papers.</p><div class="scroll"><table><thead><tr><th>Paper</th><th>Augmentation</th><th>Value</th><th>Condition</th></tr></thead><tbody>'+top.map(function(x){return '<tr><td>'+esc(x.r.paper_id)+'</td><td>'+esc(x.r.aug_species)+'</td><td class="num">'+fmt(x.r.v)+'</td><td class="small">'+esc(x.r.test_condition)+'</td></tr>'}).join("")+'</tbody></table></div>';
+  };
+  $("#pgo").onclick=run;if(opts.length){var i=opts.indexOf("MIC_S_aureus|ug/mL");if(i>-1)$("#pm").value=opts[i];run();}
+}
+})();
+</script>
+</body>
+</html>
